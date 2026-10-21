@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark light">
+  <meta name="referrer" content="no-referrer">
+  <title>Keystone</title>
+  <link rel="icon" href="/icon.svg" type="image/svg+xml">
+  <script src="/theme.js"></script>
+  <link rel="stylesheet" href="/styles.css">
+  <script type="module" src="/main.js"></script>
+</head>
+<body class="app">
+  <svg class="sprite" aria-hidden="true">
+    <symbol id="i-external" viewBox="0 0 16 16"><path d="M6 3h7v7M13 3 6.5 9.5M11 9v4H3V5h4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-update" viewBox="0 0 16 16"><path d="M8 13V3m0 0L4 7m4-4 4 4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-alert" viewBox="0 0 16 16"><path d="M8 2.5 14 13H2L8 2.5Z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M8 6.5v3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><circle cx="8" cy="11.3" r=".8" fill="currentColor"/></symbol>
+    <symbol id="i-battery" viewBox="0 0 16 16"><rect x="1.5" y="4.5" width="11" height="7" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M14.5 7v2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><rect x="3.5" y="6.5" width="2.5" height="3" rx=".5" fill="currentColor"/></symbol>
+    <symbol id="i-search" viewBox="0 0 16 16"><circle cx="7" cy="7" r="4.5" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="m10.5 10.5 3 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></symbol>
+    <symbol id="i-wrap" viewBox="0 0 16 16"><path d="M2 4h12M2 8h9.5a2.5 2.5 0 0 1 0 5H8m0 0 1.5-1.5M8 13l1.5 1.5M2 12h3" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-theme-auto" viewBox="0 0 16 16"><circle cx="8" cy="8" r="5.5" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M8 2.5a5.5 5.5 0 0 1 0 11Z" fill="currentColor"/></symbol>
+    <symbol id="i-theme-dark" viewBox="0 0 16 16"><path d="M13.5 9.6A5.5 5.5 0 1 1 6.4 2.5a4.5 4.5 0 0 0 7.1 7.1Z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></symbol>
+    <symbol id="i-theme-light" viewBox="0 0 16 16"><circle cx="8" cy="8" r="2.75" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M8 1.5V3m0 10v1.5M1.5 8H3m10 0h1.5M3.4 3.4l1.06 1.06m7.08 7.08 1.06 1.06M3.4 12.6l1.06-1.06m7.08-7.08 1.06-1.06" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></symbol>
+    <symbol id="i-down" viewBox="0 0 16 16"><path d="M8 3v10m0 0-4-4m4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  </svg>
+
+  <header class="topbar">
+    <a class="brand" href="/" aria-label="Keystone for Homebridge">
+      <img src="/icon.svg" alt="" width="22" height="22">
+      <span>Keystone</span>
+      <span class="brand-for">for Homebridge</span>
+    </a>
+    <div class="host" role="group" aria-label="Host">
+      <label class="select host-pick" id="host-pick">
+        <span class="swatch"></span>
+        <span class="visually-hidden">Host stats from</span>
+        <select id="host-instance"></select>
+      </label>
+      <div class="host-stats" id="host-stats"></div>
+    </div>
+    <div class="topbar-end">
+      <span class="live" id="live" data-state="reconnecting" role="status"><span class="pulse"></span><span id="live-text">Connecting…</span></span>
+      <button class="icon-button" id="theme" type="button" title="Theme: dark" aria-label="Theme: dark">
+        <svg class="icon" aria-hidden="true"><use href="#i-theme-dark"/></svg>
+      </button>
+      <button class="ghost" id="sign-out" type="button">Sign out</button>
+    </div>
+  </header>
+
+  <div class="banner" id="banner" role="alert" hidden></div>
+
+  <div class="layout">
+    <aside class="sidebar" id="instances" aria-label="Instances"></aside>
+
+    <main class="logs">
+      <div class="toolbar" role="toolbar" aria-label="Log filters">
+        <div class="chips" id="instance-filter" aria-label="Instances"></div>
+        <div class="toolbar-row">
+          <div class="segmented" id="level-filter" aria-label="Level">
+            <button type="button" data-level="" aria-pressed="true">All</button>
+            <button type="button" data-level="warn" aria-pressed="false">Warnings</button>
+            <button type="button" data-level="error" aria-pressed="false">Errors</button>
+          </div>
+          <label class="select">
+            <span class="visually-hidden">Plugin</span>
+            <select id="plugin-filter"><option value="">All plugins</option></select>
+          </label>
+          <label class="search">
+            <svg class="icon" aria-hidden="true"><use href="#i-search"/></svg>
+            <span class="visually-hidden">Search the log</span>
+            <input id="search" type="search" placeholder="Search" autocomplete="off" spellcheck="false">
+            <kbd>/</kbd>
+          </label>
+          <button class="ghost" id="clear" type="button" hidden>Clear filters</button>
+          <span class="toolbar-spacer"></span>
+          <button class="icon-button" id="wrap" type="button" aria-pressed="false" title="Wrap long lines">
+            <svg class="icon" aria-hidden="true"><use href="#i-wrap"/></svg>
+            <span class="visually-hidden">Wrap long lines</span>
+          </button>
+        </div>
+      </div>
+
+      <div class="log-scroll" id="log-scroll" tabindex="0" aria-label="Log lines">
+        <div class="log-status" id="log-status" data-state="empty">Loading…</div>
+        <div class="log-lines" id="log-lines" role="log" aria-live="off"></div>
+      </div>
+      <button class="jump" id="jump" type="button" hidden>Back to latest</button>
+    </main>
+  </div>
+</body>
+</html>

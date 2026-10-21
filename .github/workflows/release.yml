@@ -1,0 +1,40 @@
+name: Release
+
+# Fully automated releases via release-please.
+#
+# Flow:
+#   1. A commit with a Conventional Commit subject (e.g. "feat: …", "fix: …")
+#      lands on main, pushed directly or squash-merged from a PR.
+#   2. release-please opens or updates a "Release PR" that bumps the version in
+#      package.json and package-lock.json and writes CHANGELOG.md from commits.
+#   3. Merge that Release PR. release-please tags vX.Y.Z and creates the
+#      GitHub Release. Keystone is not published to npm.
+#
+# See RELEASING.md.
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+
+permissions: {}
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release-please:
+    name: Prepare release
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write        # create release commits, tags, and GitHub releases
+      pull-requests: write   # open/update the Release PR
+    steps:
+      - name: Run release-please
+        uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
+        with:
+          token: ${{ github.token }}
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json

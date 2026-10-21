@@ -1,0 +1,23 @@
+{
+  "listen": { "host": "127.0.0.1", "port": 8590 },
+  "dataDir": "data",
+  "secretsFile": "secrets.json",
+  "retentionDays": 7,
+  "cookieSecure": true,
+  "trustProxy": false,
+  "logLevel": "info",
+  "instances": [
+    {
+      "name": "example-1",
+      "apiUrl": "http://127.0.0.1:8581",
+      "uiUrl": "https://example-1.example.com",
+      "username": "keystone"
+    },
+    {
+      "name": "example-2",
+      "apiUrl": "http://127.0.0.1:8582",
+      "uiUrl": "https://example-2.example.com",
+      "username": "keystone"
+    }
+  ]
+}

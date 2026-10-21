@@ -1,0 +1,49 @@
+# Dependabot keeps npm packages and GitHub Actions current. Low-risk updates are
+# grouped to reduce pull request noise; major updates arrive on their own.
+# See: https://docs.github.com/code-security/dependabot/dependabot-version-updates/configuration-options-for-the-dependabot.yml-file
+
+version: 2
+updates:
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore"
+      prefix-development: "chore"
+    ignore:
+      # @types/node must match the oldest supported Node (package.json engines),
+      # so a major bump only comes with raising that minimum.
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
+    groups:
+      # The tests run the socket.io server against the shipped client, so the
+      # two move together. Must stay above the catch-all: Dependabot assigns a
+      # dependency to the first group whose patterns match.
+      socket-io:
+        patterns:
+          - "socket.io"
+          - "socket.io-client"
+      npm:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
+      # Security updates, which Dependabot opens when an alert has a fix.
+      npm-security:
+        applies-to: security-updates
+        patterns:
+          - "*"
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    commit-message:
+      prefix: "ci"
+    groups:
+      github-actions:
+        patterns:
+          - "*"

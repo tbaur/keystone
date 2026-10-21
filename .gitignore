@@ -1,0 +1,10 @@
+node_modules/
+dist/
+data/
+config.json
+secrets.json
+secrets.json.*
+*.tmp
+.env
+*.log
+.DS_Store

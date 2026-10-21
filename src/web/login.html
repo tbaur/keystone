@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <meta name="referrer" content="no-referrer">
+  <title>Sign in · Keystone</title>
+  <link rel="icon" href="/icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/styles.css">
+  <script type="module" src="/login.js"></script>
+</head>
+<body class="login-page">
+  <main class="login-card">
+    <img src="/icon.svg" alt="" width="40" height="40">
+    <h1>Keystone</h1>
+    <p class="brand-for">for Homebridge</p>
+    <p class="muted">Sign in to see every instance in one place.</p>
+    <form id="login">
+      <label for="username">User name</label>
+      <input id="username" name="username" type="text" autocomplete="username" autocapitalize="none" spellcheck="false" maxlength="64" required autofocus>
+      <label for="password">Password</label>
+      <input id="password" name="password" type="password" autocomplete="current-password" required>
+      <button id="submit" type="submit" class="primary">Sign in</button>
+      <p id="message" class="message" role="alert"></p>
+    </form>
+  </main>
+</body>
+</html>
