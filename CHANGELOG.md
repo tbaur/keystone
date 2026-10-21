@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.2](https://github.com/tbaur/keystone/compare/v0.2.1...v0.2.2) (2026-10-21)
+
+
+### Bug Fixes
+
+* **web:** leave room between the password field and Sign in ([f27eab6](https://github.com/tbaur/keystone/commit/f27eab634391b6078cc298c028f89a077642d55b))
+
 ## [0.2.1](https://github.com/tbaur/keystone/compare/v0.2.0...v0.2.1) (2026-10-21)
 
 
