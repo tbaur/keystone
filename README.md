@@ -10,13 +10,13 @@ Keystone is one page for several Homebridge instances. Many setups run more than
 
 ![Keystone with two instances and the merged log](docs/screenshot.png)
 
-Keystone reads from each Homebridge UI's API with a non-admin account. It never changes anything in Homebridge. It keeps the log history in SQLite for `retentionDays`, so the log survives restarts and you can scroll back past what the Homebridge UI keeps.
+Keystone reads from each Homebridge UI's API with a non-admin account. It never changes anything in Homebridge. The server collects the logs all the time, whether or not a browser is open, and keeps them in SQLite for `retentionDays`. Older lines are removed every hour, so the history is a rolling window. The log survives restarts, and you can scroll back past what the Homebridge UI keeps.
 
 ## What you get
 
 - **One live log for every instance.** Each instance gets its own colour. The log follows new lines while you are at the bottom. If you scroll up, it stops following and counts what arrives below. Scrolling to the top loads older lines from the stored history.
 - **Filters that stay in the URL.** You can filter by instance, level (warnings, errors), plugin and text, and a filtered view can be bookmarked. Clicking an instance or plugin name in a line filters to it.
-- **No gaps.** When the browser reconnects, the server sends the lines it missed. When Keystone reconnects to Homebridge, it drops the lines that the Homebridge UI replays and it has already stored. The log marks the time it lost the stream and the time it came back.
+- **No gaps.** When the browser reconnects, the server sends the lines it missed. When Keystone reconnects to Homebridge, it drops the lines that the Homebridge UI replays and it has already stored. The log marks the time it lost the stream and the time it came back. While Keystone itself is stopped, nothing is collected. When it starts again, it can recover only the lines that the Homebridge UI replays.
 - **Status at a glance.** Each instance shows whether it is running, its child bridges, errors and warnings per plugin over 24 hours, available updates and low batteries. When an instance stops answering, its card keeps the last known data and says how old it is. The top bar shows CPU, memory, network throughput in Mbps and uptime for the machine that one instance runs on. The instance's colour dot opens a menu to pick another, and the browser remembers the choice.
 - **Its own users.** Each person signs in with a user name and password. You add and remove users with `npm run secrets`, so there is no admin page. The Homebridge passwords stay on the server.
 
@@ -52,7 +52,7 @@ The server reads `--config <path>`, then `KEYSTONE_CONFIG`, then `./config.json`
 | `listen.port` | `8590` | Port to listen on. |
 | `dataDir` | `data` | Holds `dashboard.sqlite`. Relative to the config file. Keystone makes it private to its user. |
 | `secretsFile` | `secrets.json` | Where `npm run secrets` writes the users and passwords. Relative to the config file. |
-| `retentionDays` | `7` | Days of log history to keep, 1 to 90. |
+| `retentionDays` | `7` | Days of log history to keep, 1 to 90. Older lines are removed at start and every hour. |
 | `cookieSecure` | `true` | Mark the session cookie `Secure` and send HSTS. Turn off only for plain HTTP on a trusted LAN. |
 | `trustProxy` | `false` | Take the client address from `X-Real-IP` when the request comes from loopback. Turn on behind nginx on the same host, so login throttling and the logs see the real client. |
 | `logLevel` | `info` | `debug`, `info`, `warn` or `error`. A non-empty `KEYSTONE_LOG_LEVEL` overrides it. |
