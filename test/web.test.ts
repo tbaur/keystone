@@ -1,4 +1,6 @@
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { describe, it } from 'node:test'
 
 import { searchQuery, searchText } from '../src/server/store/search.ts'
@@ -6,6 +8,7 @@ import type { LogLine } from '../src/shared/types.ts'
 import { parseAnsi, stripAnsi } from '../src/web/ansi.ts'
 import { matches, NO_FILTERS, readFilters, toParams } from '../src/web/filters.ts'
 import { formatDuration, formatMbps } from '../src/web/format.ts'
+import { formatPluginVersion, formatVersion, hasPluginUpdate, hasUpdate, pluginsOutsideBridges } from '../src/web/plugins.ts'
 
 describe('parseAnsi', () => {
   it('splits text into coloured segments and resets', () => {
@@ -78,5 +81,66 @@ describe('formatMbps', () => {
     assert.equal(formatMbps(240_000), '1.9')
     assert.equal(formatMbps(1_850_000), '15')
     assert.equal(formatMbps(117_500_000), '940')
+  })
+})
+
+describe('formatPluginVersion', () => {
+  const plugin = { name: 'homebridge-example', displayName: 'Example', version: '2.0.0', latestVersion: '2.0.0', updateAvailable: false, disabled: false }
+
+  it('shows the installed version, and the latest one when an update is available', () => {
+    assert.equal(formatPluginVersion(plugin), '2.0.0')
+    assert.equal(formatPluginVersion({ ...plugin, latestVersion: '2.1.0', updateAvailable: true }), '2.0.0 → 2.1.0')
+    assert.equal(formatPluginVersion({ ...plugin, version: null }), '–')
+  })
+
+  it('says when a plugin is disabled instead of offering its update', () => {
+    assert.equal(formatPluginVersion({ ...plugin, latestVersion: '2.1.0', updateAvailable: true, disabled: true }), 'disabled')
+  })
+})
+
+describe('formatVersion', () => {
+  it('shows the installed version alone when the latest one is unknown', () => {
+    assert.equal(formatVersion({ version: '1.11.0', latestVersion: null, updateAvailable: true }), '1.11.0')
+    assert.equal(formatVersion({ version: '1.11.0', latestVersion: '1.11.1', updateAvailable: true }), '1.11.0 → 1.11.1')
+  })
+
+  it('still offers the update when the installed version is unknown', () => {
+    assert.equal(formatVersion({ version: null, latestVersion: '1.11.1', updateAvailable: true }), '– → 1.11.1')
+  })
+})
+
+describe('hasUpdate', () => {
+  const plugin = { name: 'homebridge-example', displayName: 'Example', version: '2.0.0', latestVersion: '2.1.0', updateAvailable: true, disabled: false }
+
+  it('counts an update only when the version to update to is known', () => {
+    assert.equal(hasUpdate(plugin), true)
+    assert.equal(hasUpdate({ ...plugin, latestVersion: null }), false)
+    assert.equal(hasUpdate({ ...plugin, updateAvailable: false }), false)
+  })
+
+  it('offers no update for a disabled plugin', () => {
+    assert.equal(hasPluginUpdate(plugin), true)
+    assert.equal(hasPluginUpdate({ ...plugin, disabled: true }), false)
+  })
+})
+
+describe('pluginsOutsideBridges', () => {
+  const plugin = (name: string) => ({ name, displayName: name, version: '1.0.0', latestVersion: '1.0.0', updateAvailable: false, disabled: false })
+  const bridge = (name: string, pluginName: string | null) => ({ name, plugin: pluginName, status: 'ok' as const, manuallyStopped: false })
+
+  it('leaves out the plugins that a child bridge runs, since their rows show the version', () => {
+    const installed = [plugin('homebridge-config-ui-x'), plugin('homebridge-example-lights'), plugin('homebridge-example-lock')]
+    const childBridges = [bridge('Lock Bridge', 'homebridge-example-lock'), bridge('Second Lock Bridge', 'homebridge-example-lock'), bridge('Unknown', null)]
+    assert.deepEqual(pluginsOutsideBridges(installed, childBridges).map((p) => p.name), ['homebridge-config-ui-x', 'homebridge-example-lights'])
+  })
+})
+
+describe('page footer', () => {
+  it('shows the version from package.json, on the line that release-please updates', () => {
+    const root = join(import.meta.dirname, '..')
+    const { version } = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')) as { version: string }
+    const html = readFileSync(join(root, 'src/web/index.html'), 'utf8')
+    const line = html.split('\n').find((text) => text.includes('x-release-please-version'))
+    assert.ok(line?.includes(`>Keystone v${version}</a>`), 'the footer version must match package.json')
   })
 })

@@ -60,6 +60,8 @@ export interface ChildBridgeSummary {
 export interface PluginSummary {
   name: string
   displayName: string
+  /** The installed version. */
+  version: string | null
   latestVersion: string | null
   updateAvailable: boolean
   disabled: boolean

@@ -222,6 +222,11 @@ kbd {
   scrollbar-width: none;
 }
 .sidebar::-webkit-scrollbar { display: none; }
+.cards { display: flex; flex-direction: column; gap: 14px; }
+
+.about { margin: 0; padding: 0 0 6px; color: var(--faint); font-size: 12.5px; text-align: center; }
+.about a { color: var(--muted); text-decoration: none; }
+.about a:hover { color: var(--text); }
 
 .panel, .logs, .card {
   background: var(--surface);
@@ -267,6 +272,8 @@ kbd {
 }
 
 .card-sub { margin: -6px 0 0; color: var(--muted); font-size: 13.5px; }
+.card-sub span { white-space: nowrap; }
+.card-sub .update { color: var(--accent); }
 
 .pill {
   font-size: 13px; font-weight: 600;
@@ -296,11 +303,18 @@ kbd {
 }
 .section .count { text-transform: none; letter-spacing: 0; font-weight: 500; }
 
-.bridges, .attention { list-style: none; margin: 0; padding: 0; display: grid; gap: 3px; }
+.bridges, .plugins, .attention { list-style: none; margin: 0; padding: 0; display: grid; gap: 3px; }
 
 .bridges li { display: flex; align-items: center; gap: 8px; font-size: 14px; min-width: 0; }
 .bridges .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .bridges .state { margin-left: auto; font-size: 13px; }
+
+.plugins li { display: flex; align-items: baseline; gap: 8px; font-size: 14px; min-width: 0; }
+.plugins .name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bridges .version, .plugins .version { margin-left: auto; flex: none; color: var(--faint); font-size: 13px; font-variant-numeric: tabular-nums; }
+.bridges .state ~ .version { margin-left: 0; }
+.bridges .version.update, .plugins .version.update { color: var(--accent); }
+.plugins li.disabled .name { color: var(--faint); }
 
 .dot { width: 7px; height: 7px; border-radius: 50%; flex: none; background: var(--faint); }
 .dot.ok { background: var(--ok); } .state.ok { color: var(--ok); }
@@ -313,9 +327,7 @@ kbd {
 .attention li.warn { color: var(--warn); }
 .attention li.sub { padding-left: 23px; color: var(--muted); font-size: 13.5px; }
 .attention li.sub .link::before { content: "↳ "; color: var(--faint); }
-.attention .detail { color: var(--faint); font-size: 13px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.attention a { text-underline-offset: 3px; white-space: nowrap; flex: none; }
-.attention li > span:not(.detail) { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.attention li > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 .card-links {
   display: flex; flex-wrap: wrap; gap: 4px 14px;
@@ -513,7 +525,7 @@ mark { background: color-mix(in srgb, var(--accent) 38%, transparent); color: in
   .app { height: auto; }
   .layout { display: block; }
   .app { padding: 0 10px 10px; }
-  .sidebar { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); align-items: start; }
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); align-items: start; }
   .logs { height: 80vh; margin-top: 14px; }
   .host { display: none; }
   .brand .brand-for { display: none; }

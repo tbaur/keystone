@@ -14,7 +14,6 @@
 <body class="app">
   <svg class="sprite" aria-hidden="true">
     <symbol id="i-external" viewBox="0 0 16 16"><path d="M6 3h7v7M13 3 6.5 9.5M11 9v4H3V5h4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></symbol>
-    <symbol id="i-update" viewBox="0 0 16 16"><path d="M8 13V3m0 0L4 7m4-4 4 4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></symbol>
     <symbol id="i-alert" viewBox="0 0 16 16"><path d="M8 2.5 14 13H2L8 2.5Z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M8 6.5v3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><circle cx="8" cy="11.3" r=".8" fill="currentColor"/></symbol>
     <symbol id="i-battery" viewBox="0 0 16 16"><rect x="1.5" y="4.5" width="11" height="7" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M14.5 7v2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><rect x="3.5" y="6.5" width="2.5" height="3" rx=".5" fill="currentColor"/></symbol>
     <symbol id="i-search" viewBox="0 0 16 16"><circle cx="7" cy="7" r="4.5" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="m10.5 10.5 3 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></symbol>
@@ -51,7 +50,10 @@
   <div class="banner" id="banner" role="alert" hidden></div>
 
   <div class="layout">
-    <aside class="sidebar" id="instances" aria-label="Instances"></aside>
+    <aside class="sidebar" aria-label="Instances">
+      <div class="cards" id="instances"></div>
+      <p class="about"><a href="https://github.com/tbaur/keystone" target="_blank" rel="noopener noreferrer">Keystone v0.1.0</a> / by tbaur<!-- x-release-please-version --></p>
+    </aside>
 
     <main class="logs">
       <div class="toolbar" role="toolbar" aria-label="Log filters">
