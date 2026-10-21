@@ -6,7 +6,7 @@ Keystone is not published to npm. A release is a git tag and a GitHub Release. P
 
 ## Flow
 
-1. A commit with a **Conventional Commits subject** lands on `main`. It can be pushed directly, or squash-merged from a pull request, in which case the pull request title becomes the subject. The subject decides the next version:
+1. A pull request with a **Conventional Commits title** is squash-merged into `main`. The title becomes the commit subject, and the subject decides the next version:
 
    | Subject prefix | Example | Version bump |
    |---|---|---|
@@ -22,7 +22,7 @@ Keystone is not published to npm. A release is a git tag and a GitHub Release. P
 
 To ship a release, land the changes, approve the Release PR's checks, then merge the Release PR.
 
-To force a version, put this footer on the commit:
+To force a version, add this footer to the squash commit message in the merge dialog:
 
 ```
 Release-As: 1.0.0
@@ -53,7 +53,17 @@ Under **Settings → Actions → General → Workflow permissions**:
 
 Without the second setting, release-please can update its branch but cannot open the Release PR.
 
-If you protect `main`, allow squash merges with the pull request title as the commit subject, because release-please reads that subject. Do not require status checks on the Release PR. Its checks wait for approval, so a required check would block the merge until someone approves it.
+## Branch protection
+
+`main` is protected, and the protection stays compatible with this flow:
+
+- **A pull request is required** before merging. It needs no approving review, because there is one maintainer.
+- **The rules apply to administrators too**, so nobody pushes to `main` directly.
+- **The CI jobs must pass.** That includes the Release PR, so approve its checks before you merge it.
+- **Squash merges only**, with the pull request title as the commit subject and an empty body, because release-please reads that subject.
+- **Linear history**, and no force pushes or deletion of `main`.
+
+A pull request that lists several changes for the release notes needs them in the squash commit. The body is empty by default, so paste the extra Conventional Commits lines into the merge dialog.
 
 ## Notes
 
