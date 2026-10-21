@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.1](https://github.com/tbaur/keystone/compare/v0.2.0...v0.2.1) (2026-10-21)
+
+
+### Bug Fixes
+
+* **web:** inset the card's counts and versions, and left-align the footer ([#7](https://github.com/tbaur/keystone/issues/7)) ([22c6024](https://github.com/tbaur/keystone/commit/22c6024d32c6e650dc2acbbc3ed512b7c40e6b96))
+
 ## [0.2.0](https://github.com/tbaur/keystone/compare/v0.1.0...v0.2.0) (2026-10-21)
 
 
