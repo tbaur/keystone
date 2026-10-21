@@ -63,6 +63,7 @@ export function mapPlugins(value: unknown): PluginSummary[] {
     return [{
       name,
       displayName: asString(plugin.displayName) ?? name,
+      version: asString(plugin.installedVersion),
       latestVersion: asString(plugin.latestVersion),
       updateAvailable: asBoolean(plugin.updateAvailable) ?? false,
       disabled: asBoolean(plugin.disabled) ?? false,

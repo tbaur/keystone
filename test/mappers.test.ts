@@ -52,6 +52,12 @@ describe('mappers', () => {
     const plugins = mapPlugins([{ name: 'z-plugin', displayName: 'Zed' }, { name: 'a-plugin' }, null])
     assert.deepEqual(plugins.map((p) => p.displayName), ['a-plugin', 'Zed'])
     assert.equal(plugins[0]?.updateAvailable, false)
+    assert.equal(plugins[0].version, null)
+  })
+
+  it('keeps the installed and the latest version of a plugin', () => {
+    const [plugin] = mapPlugins([{ name: 'homebridge-example', installedVersion: '2.0.0', latestVersion: '2.1.0', updateAvailable: true }])
+    assert.deepEqual([plugin?.version, plugin?.latestVersion, plugin?.updateAvailable], ['2.0.0', '2.1.0', true])
   })
 
   it('rounds CPU load and reads memory, uptime and network rates', () => {

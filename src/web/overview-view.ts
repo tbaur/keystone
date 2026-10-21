@@ -1,7 +1,8 @@
-import type { ChildBridgeSummary, HostStats, InstanceSnapshot, LogCount, Overview } from '../shared/types.ts'
+import type { ChildBridgeSummary, HostStats, InstanceSnapshot, LogCount, Overview, PluginSummary } from '../shared/types.ts'
 import { h, icon } from './dom.ts'
 import type { Filters } from './filters.ts'
 import { formatAgo, formatDuration, formatMbps, plural } from './format.ts'
+import { formatPluginVersion, formatVersion, hasPluginUpdate, hasUpdate, pluginsOutsideBridges } from './plugins.ts'
 
 type Tone = 'ok' | 'warn' | 'err' | 'muted'
 
@@ -83,7 +84,8 @@ function card(instance: InstanceSnapshot, counts: readonly LogCount[], handlers:
       h('span', { class: `pill ${tone}` }, label)),
     subtitle(instance),
     connectionNotice(instance, now),
-    bridges(instance.childBridges),
+    bridges(instance.childBridges, instance.plugins),
+    plugins(instance.plugins, instance.childBridges),
     attention(instance, counts, handlers),
     links(instance))
 }
@@ -102,13 +104,21 @@ function subtitle(instance: InstanceSnapshot): HTMLElement | null {
   if (!hb) {
     return null
   }
-  const parts = [hb.bridgeName, hb.version && `Homebridge ${hb.version}`, instance.accessories && plural(instance.accessories.total, 'accessory', 'accessories')]
-  return h('p', { class: 'card-sub' }, parts.filter(Boolean).join(' · '))
+  const isUpdate = hasUpdate(hb)
+  const version = (hb.version || isUpdate) && h('span', isUpdate ? { class: 'update', title: 'Update available' } : {}, `Homebridge ${formatVersion(hb)}`)
+  const parts = [
+    version,
+    instance.accessories && h('span', {}, plural(instance.accessories.total, 'accessory', 'accessories')),
+  ].filter((part) => part instanceof HTMLElement)
+  if (parts.length === 0) {
+    return null
+  }
+  return h('p', { class: 'card-sub' }, ...parts.flatMap((part, index) => index === 0 ? [part] : [' · ', part]))
 }
 
 /**
  * What is wrong, if anything. While Homebridge UI is out of reach the card
- * keeps the last known bridges, updates and batteries, and says how old they
+ * keeps the last known bridges, versions and batteries, and says how old they
  * are. The plugin and accessory polls only count while it is reachable.
  */
 function connectionNotice(instance: InstanceSnapshot, now: number): HTMLElement | null {
@@ -130,7 +140,7 @@ function connectionNotice(instance: InstanceSnapshot, now: number): HTMLElement 
   return problems.length > 0 ? h('div', { class: 'notice', role: 'status' }, ...problems.map((text) => h('p', {}, text))) : null
 }
 
-function bridges(list: readonly ChildBridgeSummary[]): HTMLElement | null {
+function bridges(list: readonly ChildBridgeSummary[], installed: readonly PluginSummary[]): HTMLElement | null {
   if (list.length === 0) {
     return null
   }
@@ -139,8 +149,31 @@ function bridges(list: readonly ChildBridgeSummary[]): HTMLElement | null {
     h('h3', {}, 'Child bridges', h('span', { class: 'count' }, running === list.length ? `${running} running` : `${running} of ${list.length} running`)),
     h('ul', { class: 'bridges' }, ...list.map((bridge) => {
       const [tone, text] = bridgeState(bridge)
-      return h('li', {}, h('span', { class: `dot ${tone}` }), h('span', { class: 'name', title: bridge.plugin }, bridge.name), text && h('span', { class: `state ${tone}` }, text))
+      const plugin = installed.find((candidate) => candidate.name === bridge.plugin)
+      return h('li', {},
+        h('span', { class: `dot ${tone}` }),
+        h('span', { class: 'name', title: bridge.plugin }, bridge.name),
+        text && h('span', { class: `state ${tone}` }, text),
+        plugin && version(plugin))
     })))
+}
+
+function plugins(installed: readonly PluginSummary[], childBridges: readonly ChildBridgeSummary[]): HTMLElement | null {
+  const list = pluginsOutsideBridges(installed, childBridges)
+  if (list.length === 0) {
+    return null
+  }
+  const heading = list.length === installed.length ? 'Plugins' : 'Other plugins'
+  return h('div', { class: 'section' },
+    h('h3', {}, heading, h('span', { class: 'count' }, `${list.length} installed`)),
+    h('ul', { class: 'plugins' }, ...list.map((plugin) => h('li', { class: plugin.disabled ? 'disabled' : null },
+      h('span', { class: 'name', title: plugin.name }, plugin.displayName),
+      version(plugin)))))
+}
+
+function version(plugin: PluginSummary): HTMLElement {
+  const isUpdate = hasPluginUpdate(plugin)
+  return h('span', { class: isUpdate ? 'version update' : 'version', title: isUpdate ? 'Update available' : null }, formatPluginVersion(plugin))
 }
 
 function bridgeState(bridge: ChildBridgeSummary): [Tone, string] {
@@ -153,7 +186,6 @@ function bridgeState(bridge: ChildBridgeSummary): [Tone, string] {
 function attention(instance: InstanceSnapshot, counts: readonly LogCount[], handlers: OverviewHandlers): HTMLElement | null {
   const items = [
     ...logItems(instance.name, counts, handlers),
-    ...updateItems(instance),
     ...(instance.accessories?.lowBattery ?? []).map((battery) => item('battery', 'warn',
       `${battery.name} battery ${battery.level === null ? 'low' : `${battery.level}%`}`)),
   ]
@@ -173,19 +205,6 @@ function logItems(name: string, counts: readonly LogCount[], handlers: OverviewH
   const top = errors.slice(0, TOP_PLUGINS).map((count) => item(null, 'err', `${count.plugin ?? 'Homebridge'} · ${count.count}`,
     () => handlers.focus({ instances: [name], level: 'error', plugin: count.plugin ?? '' }), 'sub'))
   return [head, ...top]
-}
-
-function updateItems(instance: InstanceSnapshot): HTMLElement[] {
-  const updates = instance.plugins.filter((plugin) => plugin.updateAvailable && !plugin.disabled)
-    .map((plugin) => `${plugin.displayName} ${plugin.latestVersion ?? ''}`.trim())
-  if (instance.homebridge?.updateAvailable) {
-    updates.unshift(`Homebridge ${instance.homebridge.latestVersion ?? ''}`.trim())
-  }
-  if (updates.length === 0) {
-    return []
-  }
-  const link = h('a', { href: `${instance.uiUrl}/plugins`, target: '_blank', rel: 'noopener noreferrer' }, plural(updates.length, 'update'))
-  return [h('li', { class: 'muted' }, icon('update'), link, h('span', { class: 'detail', title: updates.join('\n') }, updates.join(', ')))]
 }
 
 function item(iconName: string | null, tone: Tone, text: string, onclick?: () => void, extra = ''): HTMLElement {

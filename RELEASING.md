@@ -17,7 +17,7 @@ Keystone is not published to npm. A release is a git tag and a GitHub Release. P
    | `chore:`, `docs:`, `refactor:`, `style:`, `test:`, `ci:` | `docs: fix a typo` | no release |
 
 2. The **CI** and **CodeQL** workflows run.
-3. **release-please** opens or updates a **Release PR** titled `chore(main): release X.Y.Z`. It bumps the version in `package.json`, `package-lock.json` and `.release-please-manifest.json`, and adds the new section to `CHANGELOG.md`. Several changes that land before a release go into the same Release PR.
+3. **release-please** opens or updates a **Release PR** titled `chore(main): release X.Y.Z`. It bumps the version in `package.json`, `package-lock.json`, `.release-please-manifest.json` and the page footer in `src/web/index.html`, and adds the new section to `CHANGELOG.md`. Several changes that land before a release go into the same Release PR.
 4. Merging the Release PR runs `release.yml` again. This time it creates the `vX.Y.Z` tag and publishes the GitHub Release.
 
 To ship a release, land the changes, approve the Release PR's checks, then merge the Release PR.
