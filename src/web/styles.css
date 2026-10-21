@@ -224,7 +224,7 @@ kbd {
 .sidebar::-webkit-scrollbar { display: none; }
 .cards { display: flex; flex-direction: column; gap: 14px; }
 
-.about { margin: 0; padding: 0 0 6px; color: var(--faint); font-size: 12.5px; text-align: center; }
+.about { margin: 0; padding: 0 18px 6px; color: var(--faint); font-size: 12.5px; }
 .about a { color: var(--muted); text-decoration: none; }
 .about a:hover { color: var(--text); }
 
@@ -243,6 +243,8 @@ kbd {
   position: relative;
   display: flex; flex-direction: column; gap: 14px;
   padding: 18px;
+  /* The section counts and versions sit this far in from the right, as one column clear of the edge. */
+  --column-inset: 16px;
   /* A fixed size, so a tall card glows the same as a short one. */
   background:
     radial-gradient(440px 200px at 0 0, color-mix(in srgb, var(--inst) 10%, transparent), transparent 70%),
@@ -301,17 +303,18 @@ kbd {
   font-size: 12px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase;
   color: var(--faint);
 }
-.section .count { text-transform: none; letter-spacing: 0; font-weight: 500; }
+.section .count { padding-right: var(--column-inset); text-transform: none; letter-spacing: 0; font-weight: 500; }
 
 .bridges, .plugins, .attention { list-style: none; margin: 0; padding: 0; display: grid; gap: 3px; }
 
 .bridges li { display: flex; align-items: center; gap: 8px; font-size: 14px; min-width: 0; }
 .bridges .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .bridges .state { margin-left: auto; font-size: 13px; }
+.bridges .state:last-child { padding-right: var(--column-inset); }
 
 .plugins li { display: flex; align-items: baseline; gap: 8px; font-size: 14px; min-width: 0; }
 .plugins .name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.bridges .version, .plugins .version { margin-left: auto; flex: none; color: var(--faint); font-size: 13px; font-variant-numeric: tabular-nums; }
+.bridges .version, .plugins .version { margin-left: auto; padding-right: var(--column-inset); flex: none; color: var(--faint); font-size: 13px; font-variant-numeric: tabular-nums; }
 .bridges .state ~ .version { margin-left: 0; }
 .bridges .version.update, .plugins .version.update { color: var(--accent); }
 .plugins li.disabled .name { color: var(--faint); }
