@@ -1,6 +1,6 @@
 {
   "name": "keystone",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "description": "Keystone for Homebridge: one page for several Homebridge instances, with status, child bridges, and one merged, streaming log.",
   "license": "Apache-2.0",

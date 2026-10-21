@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.0](https://github.com/tbaur/keystone/compare/v0.1.0...v0.2.0) (2026-10-21)
+
+
+### Features
+
+* **web:** show Homebridge and plugin versions, and a Keystone footer ([#5](https://github.com/tbaur/keystone/issues/5)) ([5dd31ff](https://github.com/tbaur/keystone/commit/5dd31ff73a066d8cb3a44e6fb13b8cab56657b99))
+
 ## 0.1.0 (2026-10-21)
 
 
