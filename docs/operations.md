@@ -237,4 +237,4 @@ Keep the secrets file in your usual secret store. You can write it again with `n
 
 To start over, stop the service, delete the three database files and start it again. Keystone fills the log again from each Homebridge UI's replay, and every browser has to sign in again.
 
-The database file does not shrink when lines are removed. SQLite reuses the free space for new lines. After lowering `retentionDays` a lot, you can stop the service and run `sqlite3 /opt/keystone/data/dashboard.sqlite VACUUM` to give the space back.
+The database file does not shrink when lines are removed. SQLite reuses the free space for new lines, so the file grows to about the size of one full retention window and then stays there. After lowering `retentionDays` a lot, you can stop the service and run `sqlite3 /opt/keystone/data/dashboard.sqlite VACUUM` to give the space back.
