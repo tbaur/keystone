@@ -520,6 +520,8 @@ mark { background: color-mix(in srgb, var(--accent) 38%, transparent); color: in
   background: var(--panel-2);
 }
 .login-card input:focus { outline: none; border-color: var(--accent); }
+/* The two fields stay one group. The button sits below that group. */
+.login-card .primary { margin-top: 12px; }
 .login-card .message { min-height: 20px; margin: 4px 0 0; color: var(--err); font-size: 14px; text-align: center; }
 
 /* Small screens: the instances go above the log. */
