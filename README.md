@@ -1,6 +1,7 @@
 # Keystone for Homebridge
 
 [![CI](https://github.com/tbaur/keystone/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/tbaur/keystone/actions/workflows/ci.yml?query=branch%3Amain)
+[![CodeQL](https://github.com/tbaur/keystone/actions/workflows/codeql.yml/badge.svg?branch=main)](https://github.com/tbaur/keystone/actions/workflows/codeql.yml?query=branch%3Amain)
 [![Release](https://img.shields.io/github/v/release/tbaur/keystone)](https://github.com/tbaur/keystone/releases/latest)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 [![Node](https://img.shields.io/badge/node-24%2B-green.svg)](https://nodejs.org/)
