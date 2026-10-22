@@ -71,4 +71,32 @@ describe('LogPipeline', () => {
     assert.equal(pipeline.isFailing, false)
     assert.equal(logger.records.find((record) => record.msg === 'log lines stored again')?.lost, 5)
   })
+
+  it('logs a failure while handing on stored lines and keeps going', () => {
+    const { store, written } = fakeStore()
+    const logger = memoryLogger()
+    let calls = 0
+    const pipeline = new LogPipeline({
+      store,
+      logger,
+      onStored() {
+        calls += 1
+        if (calls === 1) {
+          throw new Error('could not send')
+        }
+      },
+      flushMs: 10_000,
+    })
+    pipeline.push([line('a')])
+    assert.doesNotThrow(() => pipeline.flush())
+    assert.equal(pipeline.isFailing, false)
+    const published = logger.records.find((record) => record.msg === 'could not publish stored log lines')
+    assert.ok(published)
+    assert.equal(published.level, 'error')
+    assert.equal(published.lines, 1)
+    pipeline.push([line('b')])
+    pipeline.flush()
+    assert.deepEqual(written, ['a', 'b'])
+    assert.equal(calls, 2)
+  })
 })
