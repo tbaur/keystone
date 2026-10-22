@@ -12,7 +12,7 @@ Keystone is not published to npm. A release is a git tag and a GitHub Release. P
    |---|---|---|
    | `fix:` | `fix: keep the log at the bottom after sign-in` | patch |
    | `feat:` | `feat: show host network throughput` | minor |
-   | `feat!:` or `fix!:`, or a `BREAKING CHANGE:` footer | `feat!: require Node.js 26` | major, or minor before 1.0 |
+   | `feat!:` or `fix!:`, or a `BREAKING CHANGE:` footer | `feat!: require Node.js 26` | major |
    | `perf:` | `perf: use the search index for long queries` | patch |
    | `chore:`, `docs:`, `refactor:`, `style:`, `test:`, `ci:` | `docs: fix a typo` | no release |
 
