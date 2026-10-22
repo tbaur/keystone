@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.3](https://github.com/tbaur/keystone/compare/v0.2.2...v0.2.3) (2026-10-22)
+
+
+### Bug Fixes
+
+* stay up when a request or a live update fails ([#11](https://github.com/tbaur/keystone/issues/11)) ([8817105](https://github.com/tbaur/keystone/commit/88171051daaac8a35bac8c77f49d4a94003251cf))
+
 ## [0.2.2](https://github.com/tbaur/keystone/compare/v0.2.1...v0.2.2) (2026-10-21)
 
 
