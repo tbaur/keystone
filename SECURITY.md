@@ -2,7 +2,7 @@
 
 ## Supported versions
 
-Only the latest release gets security fixes. Before the first release, that means the current `main` branch.
+Only the latest release gets security fixes.
 
 ## Reporting a vulnerability
 
