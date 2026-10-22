@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.0](https://github.com/tbaur/keystone/compare/v0.2.3...v1.0.0) (2026-10-22)
+
+
+### Documentation
+
+* update the security policy and release table for 1.0 ([#15](https://github.com/tbaur/keystone/issues/15)) ([9b2843e](https://github.com/tbaur/keystone/commit/9b2843e69e7dd46ea57cadec337ef564663871e2))
+
 ## [0.2.3](https://github.com/tbaur/keystone/compare/v0.2.2...v0.2.3) (2026-10-22)
 
 
