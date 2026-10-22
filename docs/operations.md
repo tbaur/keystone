@@ -167,6 +167,7 @@ The server writes one JSON object per line to stdout, with `time`, `level` and `
 | `plugins poll failed`, `accessories poll failed` | One kind of data could not be read. The card keeps the last data and shows the error. |
 | `log replay did not overlap the stored lines` | After a reconnect, none of the replayed lines matched what was stored, so all of them were stored. This is normal after a log rotation or a long outage. |
 | `could not store log lines` | Writing to the database failed. `lost` counts the lines lost since the first failure. `log lines stored again` follows when it recovers. |
+| `could not publish stored log lines` | Sending a stored batch to open browsers failed. The lines are in the database. `lines` is the size of that batch. |
 | `log lines dropped; more arrived at once than the pipeline holds` | A burst larger than the write buffer arrived at once. |
 | `login failed` | A wrong user name or password, with the client address. `user` is set only when the name is a real user, because people sometimes type a password into the name field. |
 | `apiUrl uses plain http to another host` | The Homebridge password crosses the network unencrypted. Use HTTPS for that `apiUrl`. |

@@ -18,6 +18,8 @@ const FAILURE_LOG_MS = 60_000
  * Collects new lines from every instance and writes them in one transaction
  * every `flushMs`. A burst such as a replay becomes a few writes, not hundreds.
  * `maxPending` limits a burst within one `flushMs`: lines past it are dropped.
+ * If `onStored` throws, the error is logged and the process keeps running.
+ * The lines are already stored, so the store is not marked as failing.
  */
 export class LogPipeline {
   private readonly options: PipelineOptions
@@ -72,7 +74,11 @@ export class LogPipeline {
       this.options.logger.info('log lines stored again', { lost: this.failure.lost })
       this.failure = null
     }
-    this.options.onStored(stored)
+    try {
+      this.options.onStored(stored)
+    } catch (error) {
+      this.options.logger.error('could not publish stored log lines', { error, lines: stored.length })
+    }
   }
 
   private failed(error: unknown, lines: number): void {

@@ -1,4 +1,6 @@
 import assert from 'node:assert/strict'
+import { EventEmitter } from 'node:events'
+import type { IncomingMessage, ServerResponse } from 'node:http'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { describe, it } from 'node:test'
@@ -6,6 +8,7 @@ import { describe, it } from 'node:test'
 import type { Config } from '../src/server/config.ts'
 import { hashPassword } from '../src/server/auth/password.ts'
 import { startDashboard } from '../src/server/dashboard-server.ts'
+import { createHandler, type AppDeps } from '../src/server/http/app.ts'
 import type { Overview } from '../src/shared/types.ts'
 import { FAKE_PIN, FAKE_SETUP_URI, FakeHomebridge, homebridgeLine } from './helpers/fake-homebridge.ts'
 import { fakeWebRoot, memoryLogger, tempDir, waitFor } from './helpers/util.ts'
@@ -279,6 +282,54 @@ describe('dashboard HTTP', () => {
     const { request, close } = await setup(t)
     await close()
     await assert.rejects(request('/healthz'))
+  })
+})
+
+/** Enough of a response to read the status, headers and body. */
+class FakeResponse extends EventEmitter {
+  status = 0
+  headersSent = false
+  body = ''
+  readonly headers = new Map<string, string | readonly string[]>()
+
+  setHeader(name: string, value: string | number | readonly string[]): this {
+    this.headers.set(name, typeof value === 'number' ? String(value) : value)
+    return this
+  }
+
+  writeHead(status: number): this {
+    this.status = status
+    this.headersSent = true
+    return this
+  }
+
+  end(body = ''): this {
+    this.body = body
+    return this
+  }
+
+  destroy(): this {
+    return this
+  }
+}
+
+describe('request target', () => {
+  it('answers a target the URL parser rejects instead of rejecting the handler', () => {
+    const logger = memoryLogger()
+    const handler = createHandler({ config: { cookieSecure: false }, logger } as unknown as AppDeps)
+    const res = new FakeResponse()
+    const target = 'http://['
+    handler({ url: target, method: 'GET' } as IncomingMessage, res as unknown as ServerResponse)
+    assert.equal(res.status, 500)
+    assert.equal(res.headers.get('x-content-type-options'), 'nosniff')
+    const body = JSON.parse(res.body) as { error: string, message: string }
+    assert.equal(body.error, 'internal')
+    assert.match(body.message, /^Something went wrong \(request [\w-]+\)\./)
+    const failed = logger.records.find((record) => record.msg === 'request failed')
+    assert.ok(failed)
+    assert.equal(failed.level, 'error')
+    assert.equal(failed.method, 'GET')
+    assert.equal(JSON.stringify(logger.records).includes(target), false)
   })
 })
 

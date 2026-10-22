@@ -67,9 +67,12 @@ export function createHandler(deps: AppDeps): (req: IncomingMessage, res: Server
 }
 
 async function handle(deps: AppDeps, req: IncomingMessage, res: ServerResponse): Promise<void> {
-  const url = new URL(req.url ?? '/', 'http://dashboard.invalid')
   setSecurityHeaders(res, deps.config.cookieSecure)
+  // The caller drops this promise. A throw here has to stay in the try, or the process exits.
+  let path: string | undefined
   try {
+    const url = new URL(req.url ?? '/', 'http://dashboard.invalid')
+    path = url.pathname
     await route({ deps, req, res, url })
   } catch (error) {
     if (error instanceof BadRequest) {
@@ -77,7 +80,7 @@ async function handle(deps: AppDeps, req: IncomingMessage, res: ServerResponse):
       return
     }
     const requestId = randomUUID()
-    deps.logger.error('request failed', { requestId, method: req.method, path: url.pathname, error })
+    deps.logger.error('request failed', { requestId, method: req.method, path, error })
     if (res.headersSent) {
       res.destroy()
     } else {
