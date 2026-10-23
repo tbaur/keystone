@@ -14,7 +14,7 @@
     "dev:fake": "node --disable-warning=ExperimentalWarning scripts/fake-homebridge.ts",
     "secrets": "node --disable-warning=ExperimentalWarning dist/server/cli/secrets.js",
     "test": "node --disable-warning=ExperimentalWarning --test 'test/**/*.test.ts'",
-    "typecheck": "tsc -p tsconfig.json && tsc -p src/web/tsconfig.json --noEmit",
+    "typecheck": "tsc -p tsconfig.json && tsc -p src/web/tsconfig.json --noEmit && tsc -p test/web/tsconfig.json",
     "lint": "eslint .",
     "check": "npm run typecheck && npm run lint && npm test"
   },

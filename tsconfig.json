@@ -15,5 +15,6 @@
     "skipLibCheck": true,
     "noEmit": true
   },
-  "include": ["src/server", "src/shared", "test", "scripts"]
+  "include": ["src/server", "src/shared", "test", "scripts"],
+  "exclude": ["test/web"]
 }

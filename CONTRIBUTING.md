@@ -94,7 +94,7 @@ Open `http://localhost:8590` and sign in as `example` with `keystone-dev-passwor
 | `npm run check` | Typecheck, lint and tests. CI runs this. |
 | `npm run build` | Compiles the server and the web UI into `dist` |
 | `npm test` | Only the tests |
-| `npm run typecheck` | Only the TypeScript checks, for the server and the web UI |
+| `npm run typecheck` | Only the TypeScript checks, for the server, the web UI and the web UI tests |
 | `npm run lint` | Only ESLint |
 | `npm run dev:fake` | Keystone against two fake Homebridge instances |
 | `npm start` | Keystone from `dist`, with `config.json` |
