@@ -51,12 +51,15 @@ export class LogView {
   private rows = 0
   private hasMore = false
   private isLoadingOlder = false
+  private hasOlderFailed = false
   private isFollowing = true
   /** True when the rows at the bottom no longer join up with the newest lines. */
   private isDetached = false
   private hasGap = false
   private unseen = 0
   private isWaiting = false
+  /** The scroll position at the last scroll event, or after the view scrolled itself. Lower on the next event means the reader scrolled up. */
+  private lastScrollTop = 0
   /** Plugin names seen in lines, for the plugin menu. */
   readonly plugins = new Set<string>()
 
@@ -101,10 +104,12 @@ export class LogView {
     this.isDetached = false
     this.hasGap = false
     this.isWaiting = false
+    this.hasOlderFailed = false
     this.notePlugins(page.lines)
     this.place(page.lines)
     this.receive(waiting)
     this.flush()
+    this.scrollToBottom()
     this.updateStatus()
   }
 
@@ -223,6 +228,7 @@ export class LogView {
     }
     const generation = this.generation
     this.isLoadingOlder = true
+    this.hasOlderFailed = false
     this.updateStatus()
     try {
       const page = await this.options.loadOlder(keyOf(first).id)
@@ -230,7 +236,7 @@ export class LogView {
         this.prepend(page)
       }
     } catch {
-      this.el.status.textContent = 'Could not load older lines. Scroll up to try again.'
+      this.hasOlderFailed = true
     } finally {
       this.isLoadingOlder = false
       if (generation === this.generation) {
@@ -268,13 +274,14 @@ export class LogView {
       }
       fragment.append(this.row(line))
     }
+    const before = this.el.scroller.scrollHeight
     const top = this.el.list.firstElementChild
     if (top?.classList.contains('divider') && top.getAttribute('data-day') === String(day)) {
       top.remove()
     }
-    const before = this.el.scroller.scrollHeight
     this.el.list.prepend(fragment)
     this.el.scroller.scrollTop += this.el.scroller.scrollHeight - before
+    this.lastScrollTop = this.el.scroller.scrollTop
     this.rows += page.lines.length
     this.trimNewest()
   }
@@ -344,11 +351,24 @@ export class LogView {
       time, instance, plugin, message)
   }
 
+  /**
+   * Any scroll up lets go of the tail at once. Otherwise the next batch of
+   * lines pulls a slow scroll back down before it gets NEAR_BOTTOM_PX away.
+   * Coming back down near the bottom follows again.
+   */
   private onScroll(): void {
     const s = this.el.scroller
-    const isAtBottom = s.scrollHeight - s.scrollTop - s.clientHeight < NEAR_BOTTOM_PX
-    if (isAtBottom !== this.isFollowing && !this.isDetached) {
-      this.setFollowing(isAtBottom)
+    // Safari reports positions past the bottom while it bounces, so compare within the range.
+    const bottom = s.scrollHeight - s.clientHeight
+    const top = Math.min(s.scrollTop, bottom)
+    const hasMovedUp = top < Math.min(this.lastScrollTop, bottom)
+    this.lastScrollTop = top
+    if (!this.isDetached) {
+      if (this.isFollowing && hasMovedUp) {
+        this.setFollowing(false)
+      } else if (!this.isFollowing && !hasMovedUp && bottom - top < NEAR_BOTTOM_PX) {
+        this.setFollowing(true)
+      }
     }
     if (s.scrollTop < NEAR_TOP_PX) {
       void this.loadOlder()
@@ -384,7 +404,9 @@ export class LogView {
   }
 
   private scrollToBottom(): void {
-    this.el.scroller.scrollTop = this.el.scroller.scrollHeight
+    const s = this.el.scroller
+    s.scrollTop = s.scrollHeight
+    this.lastScrollTop = s.scrollTop
   }
 
   private updateStatus(): void {
@@ -397,6 +419,7 @@ export class LogView {
 
   private statusText(): string {
     if (this.isLoadingOlder) return 'Loading older lines…'
+    if (this.hasOlderFailed) return 'Could not load older lines. Scroll up to try again.'
     if (this.rows === 0) return this.filters.search || this.filters.plugin || this.filters.level ? 'No lines match these filters.' : 'Waiting for log lines…'
     return this.hasMore ? '' : 'Start of the stored log'
   }

@@ -37,6 +37,7 @@ flowchart LR
 | `src/shared/types.ts` | The JSON shapes that server and browser share |
 | `src/web/` | The page: plain TypeScript and CSS with no framework and no bundler |
 | `test/` | Unit tests named after the module they cover, plus integration tests against the fake Homebridge UI in `test/helpers/` |
+| `test/web/` | Tests of the log view against a small fake DOM, with their own tsconfig so that the DOM types stay out of the server checks |
 
 ## Reading from Homebridge
 
@@ -100,7 +101,7 @@ The page loads one page of lines from `GET /api/logs` with the current filters, 
 
 EventSource reconnects by itself and sends `Last-Event-ID`, so the server sends exactly the lines that the browser missed. A comment goes out regularly to keep proxies from closing the connection. A browser that stops reading is dropped once too much data waits for it. Each stream checks its session again with every keep-alive, and a sign-out ends that session's streams at once.
 
-In the browser, `LogView` keeps lines in log order, by time and then id. Live lines usually go at the end. A line that arrives late, for example from an instance whose replay came later, goes into its place. While the reader follows the log, the view keeps a bounded number of rows. While the reader is scrolled up, new lines are held and counted instead of drawn. Jumping to the latest reloads the page of lines when too many arrived in the meantime. Older rows load again by scrolling up.
+In the browser, `LogView` keeps lines in log order, by time and then id. Live lines usually go at the end. A line that arrives late, for example from an instance whose replay came later, goes into its place. While the reader follows the log, the view keeps a bounded number of rows. While the reader is scrolled up, new lines are held and counted instead of drawn. Any scroll up stops following at once, so a slow scroll is not pulled back down by the next batch of lines. Jumping to the latest reloads the page of lines when too many arrived in the meantime. Older rows load again by scrolling up. `test/web/log-view.test.ts` holds the cases.
 
 The server filters pages and history. The browser filters live lines with `matches()` in `filters.ts`, so live lines need no extra request. Both search the plugin name and the message without colours, ignoring case and spaces at either end. A test in `test/web.test.ts` checks that the two agree.
 
