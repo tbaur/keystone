@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.0.1](https://github.com/tbaur/keystone/compare/v1.0.0...v1.0.1) (2026-10-23)
+
+
+### Bug Fixes
+
+* keep the log in place when older lines load ([647375d](https://github.com/tbaur/keystone/commit/647375d2fbcd615fae3458d2e76d75270e6d877d))
+* let go of the live log on any scroll up ([#17](https://github.com/tbaur/keystone/issues/17)) ([647375d](https://github.com/tbaur/keystone/commit/647375d2fbcd615fae3458d2e76d75270e6d877d))
+* show the message when older log lines fail to load ([647375d](https://github.com/tbaur/keystone/commit/647375d2fbcd615fae3458d2e76d75270e6d877d))
+
 ## [1.0.0](https://github.com/tbaur/keystone/compare/v0.2.3...v1.0.0) (2026-10-22)
 
 
