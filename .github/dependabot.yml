@@ -17,6 +17,12 @@ updates:
       # so a major bump only comes with raising that minimum.
       - dependency-name: "@types/node"
         update-types: ["version-update:semver-major"]
+      # TypeScript 7.0 dropped the compiler API that typescript-eslint 8 still
+      # imports. Dependabot cannot resolve the lockfile for 7, and the job
+      # fails instead of opening a pull request. Stay on 6 until typescript-eslint
+      # supports 7.
+      - dependency-name: "typescript"
+        update-types: ["version-update:semver-major"]
     groups:
       # The tests run the socket.io server against the shipped client, so the
       # two move together. Must stay above the catch-all: Dependabot assigns a
