@@ -36,13 +36,19 @@ One commit can list several changes. Put each extra change at the bottom of the 
 
 `github-actions[bot]` authors the Release PR, because `release.yml` passes `github.token` to release-please. GitHub creates the checks for a bot's pull request, but holds them until a user with write access approves them.
 
-**Open the Release PR's Checks tab and click "Approve and run" before merging.**
+**Approve the held runs before merging.** Either click "Approve and run" on the Release PR's Checks tab, or approve them from the CLI:
 
-- There is no CLI for this. `POST /actions/runs/{run_id}/approve` covers forks from first-time contributors, not this gate.
+```bash
+sha=$(gh pr view <PR> --json headRefOid --jq .headRefOid)
+gh api "repos/tbaur/keystone/actions/runs?head_sha=$sha" --jq '.workflow_runs[] | select(.conclusion=="action_required" or .status=="action_required") | .id'
+gh api -X POST repos/tbaur/keystone/actions/runs/<RUN_ID>/approve
+```
+
+- Approve each run id that the list returns. A Release PR usually has two.
 - The approval does not stick. Every release needs it, and so does every update that release-please makes to an open Release PR.
 - **Merging without approving turns the runs red.** They end as `failure` with no jobs and no logs. That means nobody approved them, not that anything broke.
 
-GitHub added this step in its [change for pull requests created by bots](https://github.blog/changelog/2026-06-11-bot-created-pull-requests-can-run-workflows-if-approved/). It applies to branches in the same repository, not only to forks, and a repository cannot turn it off. The only way to avoid it is to author the Release PR as a different identity, which needs a GitHub App or a personal access token. This repository uses neither, because the click costs less.
+GitHub added this step in its [change for pull requests created by bots](https://github.blog/changelog/2026-06-11-bot-created-pull-requests-can-run-workflows-if-approved/). It applies to branches in the same repository, not only to forks, and a repository cannot turn it off. The only way to avoid it is to author the Release PR as a different identity, which needs a GitHub App or a personal access token. This repository uses neither, because approving each release costs less.
 
 ## Repository settings (required once)
 
