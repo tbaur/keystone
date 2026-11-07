@@ -1,5 +1,36 @@
 # Changelog
 
+## [1.0.0](https://github.com/tbaur/keystone/compare/v1.0.2...v1.0.0) (2026-11-07)
+
+
+### Features
+
+* /healthz for uptime monitors, with instance details only for a signed-in user ([7a896fd](https://github.com/tbaur/keystone/commit/7a896fd5a384e50655a10676830a8dc62f2e88b6))
+* a status card per instance with child bridges, errors and warnings per plugin, updates and low batteries, linking into that instance's Homebridge UI and keeping the last known data when it stops answering ([7a896fd](https://github.com/tbaur/keystone/commit/7a896fd5a384e50655a10676830a8dc62f2e88b6))
+* filters by instance, level, plugin and text with an indexed text search, kept in the URL ([7a896fd](https://github.com/tbaur/keystone/commit/7a896fd5a384e50655a10676830a8dc62f2e88b6))
+* host CPU, memory, network throughput in Mbps and uptime in the top bar, for the instance picked there ([7a896fd](https://github.com/tbaur/keystone/commit/7a896fd5a384e50655a10676830a8dc62f2e88b6))
+* Keystone for Homebridge ([7a896fd](https://github.com/tbaur/keystone/commit/7a896fd5a384e50655a10676830a8dc62f2e88b6))
+* one live log for every instance, stored in SQLite for retentionDays, with lines replayed after a reconnect dropped and log times read in each host's time zone ([7a896fd](https://github.com/tbaur/keystone/commit/7a896fd5a384e50655a10676830a8dc62f2e88b6))
+* settings in config.json and passwords in secrets.json, which npm run secrets writes with mode 600 ([7a896fd](https://github.com/tbaur/keystone/commit/7a896fd5a384e50655a10676830a8dc62f2e88b6))
+* sign-in per user with scrypt hashing, sessions with a maximum age, and login throttling per address and per user ([7a896fd](https://github.com/tbaur/keystone/commit/7a896fd5a384e50655a10676830a8dc62f2e88b6))
+* **web:** show Homebridge and plugin versions, and a Keystone footer ([#5](https://github.com/tbaur/keystone/issues/5)) ([5dd31ff](https://github.com/tbaur/keystone/commit/5dd31ff73a066d8cb3a44e6fb13b8cab56657b99))
+
+
+### Bug Fixes
+
+* give the header a background on small screens so the page no longer shows through it ([#21](https://github.com/tbaur/keystone/issues/21)) ([23d63a6](https://github.com/tbaur/keystone/commit/23d63a65a56b495a467b7227c6fca3cd03f5984b))
+* keep the log in place when older lines load ([647375d](https://github.com/tbaur/keystone/commit/647375d2fbcd615fae3458d2e76d75270e6d877d))
+* let go of the live log on any scroll up ([#17](https://github.com/tbaur/keystone/issues/17)) ([647375d](https://github.com/tbaur/keystone/commit/647375d2fbcd615fae3458d2e76d75270e6d877d))
+* show the message when older log lines fail to load ([647375d](https://github.com/tbaur/keystone/commit/647375d2fbcd615fae3458d2e76d75270e6d877d))
+* stay up when a request or a live update fails ([#11](https://github.com/tbaur/keystone/issues/11)) ([8817105](https://github.com/tbaur/keystone/commit/88171051daaac8a35bac8c77f49d4a94003251cf))
+* **web:** inset the card's counts and versions, and left-align the footer ([#7](https://github.com/tbaur/keystone/issues/7)) ([22c6024](https://github.com/tbaur/keystone/commit/22c6024d32c6e650dc2acbbc3ed512b7c40e6b96))
+* **web:** leave room between the password field and Sign in ([f27eab6](https://github.com/tbaur/keystone/commit/f27eab634391b6078cc298c028f89a077642d55b))
+
+
+### Documentation
+
+* update the security policy and release table for 1.0 ([#15](https://github.com/tbaur/keystone/issues/15)) ([9b2843e](https://github.com/tbaur/keystone/commit/9b2843e69e7dd46ea57cadec337ef564663871e2))
+
 ## [1.0.2](https://github.com/tbaur/keystone/compare/v1.0.1...v1.0.2) (2026-11-07)
 
 
