@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.2](https://github.com/tbaur/keystone/compare/v1.0.1...v1.0.2) (2026-11-07)
+
+
+### Bug Fixes
+
+* give the header a background on small screens so the page no longer shows through it ([#21](https://github.com/tbaur/keystone/issues/21)) ([1869844](https://github.com/tbaur/keystone/commit/186984419ea17ab4332767ed8bec5fa724404fe7))
+
 ## [1.0.1](https://github.com/tbaur/keystone/compare/v1.0.0...v1.0.1) (2026-10-23)
 
 
