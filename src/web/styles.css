@@ -530,6 +530,13 @@ mark { background: color-mix(in srgb, var(--accent) 38%, transparent); color: in
   .app { height: auto; }
   .layout { display: block; }
   .app { padding: 0 10px 10px; }
+  /* The page scrolls here, so the sticky bar needs a backdrop. */
+  .topbar {
+    margin: 0 -10px; padding: 0 14px;
+    background: color-mix(in srgb, var(--bg) 88%, transparent);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+  }
   .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); align-items: start; }
   .logs { height: 80vh; margin-top: 14px; }
   .host { display: none; }
