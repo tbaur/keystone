@@ -1,4 +1,9 @@
 /**
+ * Copyright (c) 2026 tbaur
+ *
+ * Licensed under the Apache License, Version 2.0
+ * See LICENSE file for full license text
+ *
  * Map Homebridge UI responses to the dashboard's own types, field by field.
  * Nothing passes through whole, so the PINs and setup codes in these responses
  * stay on the server.

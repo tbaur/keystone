@@ -1,3 +1,10 @@
+/**
+ * Copyright (c) 2026 tbaur
+ *
+ * Licensed under the Apache License, Version 2.0
+ * See LICENSE file for full license text
+ */
+
 const CTRL_C = '\u0003'
 const CTRL_D = '\u0004'
 const ESCAPE = '\u001b'

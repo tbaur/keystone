@@ -1,4 +1,9 @@
 /**
+ * Copyright (c) 2026 tbaur
+ *
+ * Licensed under the Apache License, Version 2.0
+ * See LICENSE file for full license text
+ *
  * The JSON shapes that the dashboard server sends to the browser.
  *
  * Every field here is chosen on purpose. The server maps Homebridge responses

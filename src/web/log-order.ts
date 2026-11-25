@@ -1,3 +1,10 @@
+/**
+ * Copyright (c) 2026 tbaur
+ *
+ * Licensed under the Apache License, Version 2.0
+ * See LICENSE file for full license text
+ */
+
 /** The order of the log: by Homebridge's time, then by id. Pages and the "older" cursor use the same order. */
 export interface LineKey {
   ts: number

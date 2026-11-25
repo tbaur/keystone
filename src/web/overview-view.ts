@@ -1,3 +1,10 @@
+/**
+ * Copyright (c) 2026 tbaur
+ *
+ * Licensed under the Apache License, Version 2.0
+ * See LICENSE file for full license text
+ */
+
 import type { ChildBridgeSummary, HostStats, InstanceSnapshot, LogCount, Overview, PluginSummary } from '../shared/types.ts'
 import { h, icon } from './dom.ts'
 import type { Filters } from './filters.ts'

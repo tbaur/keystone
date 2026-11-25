@@ -1,3 +1,10 @@
+/**
+ * Copyright (c) 2026 tbaur
+ *
+ * Licensed under the Apache License, Version 2.0
+ * See LICENSE file for full license text
+ */
+
 import type { LogLine, Overview } from '../shared/types.ts'
 import { LiveStream, fetchLogs, fetchOverview, signOut, type StreamStatus } from './api.ts'
 import { byId, h } from './dom.ts'

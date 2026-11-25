@@ -1,4 +1,9 @@
 /**
+ * Copyright (c) 2026 tbaur
+ *
+ * Licensed under the Apache License, Version 2.0
+ * See LICENSE file for full license text
+ *
  * Homebridge stamps each line with `new Date().toLocaleString()`, so the format
  * follows the host's locale and the time follows the host's time zone:
  * `10/21/2026, 8:05:09 PM` (en-US), `21/10/2026, 20:05:09` (en-GB),

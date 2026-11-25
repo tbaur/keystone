@@ -1,3 +1,10 @@
+/**
+ * Copyright (c) 2026 tbaur
+ *
+ * Licensed under the Apache License, Version 2.0
+ * See LICENSE file for full license text
+ */
+
 import type { LogLine, LogPage, Overview } from '../shared/types.ts'
 import { toParams, type Filters } from './filters.ts'
 

@@ -1,4 +1,9 @@
 /**
+ * Copyright (c) 2026 tbaur
+ *
+ * Licensed under the Apache License, Version 2.0
+ * See LICENSE file for full license text
+ *
  * Run Keystone against two fake Homebridge instances that write a steady,
  * realistic log, for working on the UI without a real Homebridge.
  *

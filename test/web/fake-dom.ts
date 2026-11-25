@@ -1,4 +1,9 @@
 /**
+ * Copyright (c) 2026 tbaur
+ *
+ * Licensed under the Apache License, Version 2.0
+ * See LICENSE file for full license text
+ *
  * Just enough of a browser to run LogView in Node: elements, a scroller with
  * a fixed row height, animation frames and resize observers. A test moves
  * time forward with frame(), which runs the steps in a browser's order:

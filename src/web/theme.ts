@@ -1,4 +1,9 @@
 /*
+ * Copyright (c) 2026 tbaur
+ *
+ * Licensed under the Apache License, Version 2.0
+ * See LICENSE file for full license text
+ *
  * The theme switch: dark (the default), light, or auto (follow the system),
  * kept in the browser. This file has no imports or exports, so it builds to a
  * classic script that the page head runs before the first paint, and a saved

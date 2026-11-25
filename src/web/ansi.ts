@@ -1,4 +1,9 @@
 /**
+ * Copyright (c) 2026 tbaur
+ *
+ * Licensed under the Apache License, Version 2.0
+ * See LICENSE file for full license text
+ *
  * Turn ANSI SGR colour codes into styled segments. Only the codes that
  * Homebridge and its plugins use are kept: 16 colours, bold, dim, italic and
  * underline. Every other escape sequence is dropped.

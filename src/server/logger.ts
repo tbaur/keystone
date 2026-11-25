@@ -1,4 +1,11 @@
-/** Structured JSON logging, one object per line on stdout. */
+/**
+ * Copyright (c) 2026 tbaur
+ *
+ * Licensed under the Apache License, Version 2.0
+ * See LICENSE file for full license text
+ *
+ * Structured JSON logging, one object per line on stdout.
+ */
 
 export const LOG_LEVELS = ['debug', 'info', 'warn', 'error'] as const
 export type Level = (typeof LOG_LEVELS)[number]
