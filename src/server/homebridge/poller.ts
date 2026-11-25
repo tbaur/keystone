@@ -1,3 +1,10 @@
+/**
+ * Copyright (c) 2026 tbaur
+ *
+ * Licensed under the Apache License, Version 2.0
+ * See LICENSE file for full license text
+ */
+
 import { AUTH_RETRY_MS, HomebridgeApiError } from './api-client.ts'
 import { Backoff } from './backoff.ts'
 

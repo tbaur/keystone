@@ -1,3 +1,10 @@
+/**
+ * Copyright (c) 2026 tbaur
+ *
+ * Licensed under the Apache License, Version 2.0
+ * See LICENSE file for full license text
+ */
+
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'

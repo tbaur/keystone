@@ -1,4 +1,9 @@
 /**
+ * Copyright (c) 2026 tbaur
+ *
+ * Licensed under the Apache License, Version 2.0
+ * See LICENSE file for full license text
+ *
  * A small element builder. Text always goes in through text nodes, never as
  * HTML, so nothing from a log line can become markup.
  */

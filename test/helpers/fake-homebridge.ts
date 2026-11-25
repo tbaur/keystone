@@ -1,4 +1,9 @@
 /**
+ * Copyright (c) 2026 tbaur
+ *
+ * Licensed under the Apache License, Version 2.0
+ * See LICENSE file for full license text
+ *
  * A stand-in for one Homebridge UI: the REST endpoints the dashboard polls and
  * the `log` socket, with the same replay-then-stream behaviour. Responses carry
  * PINs and setup codes like the real ones, so tests can prove they never leak.

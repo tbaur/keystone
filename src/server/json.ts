@@ -1,4 +1,9 @@
 /**
+ * Copyright (c) 2026 tbaur
+ *
+ * Licensed under the Apache License, Version 2.0
+ * See LICENSE file for full license text
+ *
  * Small readers for JSON of unknown shape. Each returns a typed value or a
  * fallback, so code that maps a Homebridge response never trusts its shape.
  */

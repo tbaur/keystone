@@ -1,4 +1,9 @@
 /**
+ * Copyright (c) 2026 tbaur
+ *
+ * Licensed under the Apache License, Version 2.0
+ * See LICENSE file for full license text
+ *
  * Write the secrets file: the Keystone users' password hashes and each
  * instance's Homebridge UI password.
  *

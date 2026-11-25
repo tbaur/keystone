@@ -1,4 +1,9 @@
 /**
+ * Copyright (c) 2026 tbaur
+ *
+ * Licensed under the Apache License, Version 2.0
+ * See LICENSE file for full license text
+ *
  * Every time the dashboard connects to a log stream, Homebridge UI first replays
  * the end of its log file (the last 50 KB, or `tail -n 500`), then streams new
  * lines. Most of the replay is already stored. These functions find where the

@@ -1,3 +1,10 @@
+/**
+ * Copyright (c) 2026 tbaur
+ *
+ * Licensed under the Apache License, Version 2.0
+ * See LICENSE file for full license text
+ */
+
 import { readFileSync } from 'node:fs'
 import { isIP } from 'node:net'
 import { dirname, resolve } from 'node:path'

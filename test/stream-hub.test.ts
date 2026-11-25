@@ -1,3 +1,10 @@
+/**
+ * Copyright (c) 2026 tbaur
+ *
+ * Licensed under the Apache License, Version 2.0
+ * See LICENSE file for full license text
+ */
+
 import assert from 'node:assert/strict'
 import { EventEmitter } from 'node:events'
 import type { ServerResponse } from 'node:http'

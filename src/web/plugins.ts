@@ -1,4 +1,11 @@
-/** How the instance cards show versions. No DOM here, so the tests can import it. */
+/**
+ * Copyright (c) 2026 tbaur
+ *
+ * Licensed under the Apache License, Version 2.0
+ * See LICENSE file for full license text
+ *
+ * How the instance cards show versions. No DOM here, so the tests can import it.
+ */
 
 import type { ChildBridgeSummary, HomebridgeSummary, PluginSummary } from '../shared/types.ts'
 

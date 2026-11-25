@@ -1,3 +1,10 @@
+/**
+ * Copyright (c) 2026 tbaur
+ *
+ * Licensed under the Apache License, Version 2.0
+ * See LICENSE file for full license text
+ */
+
 import { MAX_PAGE, type LogFilter } from '../store/log-store.ts'
 import { BadRequest } from './http-utils.ts'
 
