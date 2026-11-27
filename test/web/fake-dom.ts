@@ -16,6 +16,8 @@ export const VIEW_PX = 400
 interface FakeEvent {
   type: string
   target: FakeElement
+  /** What else the event carries, such as deltaY or key. */
+  [field: string]: unknown
 }
 
 type Listener = (event: FakeEvent) => void
@@ -267,6 +269,8 @@ export class FakeBrowser {
   readonly scroller = new FakeScroller(this.list)
   readonly status = new FakeElement('div')
   readonly jump = new FakeElement('button')
+  /** Stands in for window, for the listeners LogView adds there. */
+  readonly window = new FakeElement('window')
   /** What window.getSelection() returns as text. */
   selection = ''
   private readonly frames = new Map<number, () => void>()
@@ -283,7 +287,10 @@ export class FakeBrowser {
         createTextNode: (text: string) => new FakeText(text),
         createDocumentFragment: () => new FakeFragment(),
       },
-      window: { getSelection: () => ({ toString: () => this.selection }) },
+      window: {
+        getSelection: () => ({ toString: () => this.selection }),
+        addEventListener: (type: string, listener: Listener) => this.window.addEventListener(type, listener),
+      },
       requestAnimationFrame: (callback: (time: number) => void) => {
         const id = this.nextFrame++
         frames.set(id, () => callback(0))
