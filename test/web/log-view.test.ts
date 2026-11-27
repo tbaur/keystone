@@ -271,6 +271,49 @@ describe('LogView older lines', () => {
     assert.equal(browser.scroller.scrollTop, top + 20 * ROW_PX)
   })
 
+  it('keeps the same line in view when they load where the browser does not anchor the scroll', async () => {
+    const older = Promise.withResolvers<LogPage>()
+    const { browser } = setup(page(lines(100, 129), true), { loadOlder: () => older.promise })
+    browser.scroller.style.overflowAnchor = 'none'
+    browser.scroller.scrollTop = 150
+    browser.settle()
+    const top = browser.scroller.scrollTop
+    older.resolve(page(lines(80, 99)))
+    await settlePromises()
+    browser.settle()
+    assert.equal(browser.scroller.scrollTop, top + 20 * ROW_PX)
+  })
+
+  it('keeps the reader in place when rows above change height, as on a wrap toggle', () => {
+    const { browser } = setup(page(lines(1, 100)))
+    browser.scroller.scrollTop = 50 * ROW_PX
+    browser.settle()
+    const atTop = browser.list.children[50]
+    assert.ok(atTop)
+    assert.equal(atTop.getBoundingClientRect().top, 0)
+    for (const child of browser.list.children) {
+      child.heightPx = 2 * ROW_PX
+    }
+    browser.settle()
+    assert.equal(atTop.getBoundingClientRect().top, 0)
+  })
+
+  it('drops a page that was loading when a background tab started over at the newest lines', async () => {
+    const older = Promise.withResolvers<LogPage>()
+    const { browser, view } = setup(page(lines(100, 129), true), { loadOlder: () => older.promise })
+    browser.scroller.scrollTop = 0
+    browser.settle()
+    assert.equal(browser.status.textContent, 'Loading older lines…')
+    view.receive(lines(130, MAX_ROWS + 130))
+    browser.settle()
+    older.resolve(page(lines(80, 99)))
+    await settlePromises()
+    const ids = rowIds(browser)
+    assert.equal(ids.length, MAX_ROWS)
+    assert.equal(ids[0], 131)
+    assert.equal(browser.status.textContent, '')
+  })
+
   it('says so when they fail to load', async () => {
     const { browser } = setup(page(lines(100, 129), true), { loadOlder: () => Promise.reject(new Error('offline')) })
     browser.scroller.scrollTop = 0

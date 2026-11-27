@@ -78,9 +78,6 @@ export class LogView {
     this.options = options
     this.el = options.elements
     this.filters = filters
-    // prepend() keeps the view in place itself. Browser scroll anchoring would
-    // move it by the same height again, a page away from where the reader was.
-    this.el.scroller.style.overflowAnchor = 'none'
     this.el.scroller.addEventListener('scroll', () => this.onScroll(), { passive: true })
     this.listenForScrollUp()
     this.el.jump.addEventListener('click', () => this.jumpToLatest())
@@ -251,17 +248,20 @@ export class LogView {
         this.prepend(page)
       }
     } catch {
-      this.hasOlderFailed = true
+      if (generation === this.generation) {
+        this.hasOlderFailed = true
+      }
     } finally {
       this.isLoadingOlder = false
-      if (generation === this.generation) {
-        this.updateStatus()
-      }
+      // Also after a reset, which drew its status while this page was still loading.
+      this.updateStatus()
     }
   }
 
   /** Lines were dropped from the queue, so the rows on screen no longer join up with the new ones. */
   private startOver(): void {
+    // An older page still loading belongs above the rows that are about to go.
+    this.generation++
     this.hasGap = false
     this.el.list.replaceChildren()
     this.rows = 0
@@ -272,7 +272,13 @@ export class LogView {
     this.setFollowing(true)
   }
 
-  /** Insert older lines above, keeping what is on screen where it was. */
+  /**
+   * Insert older lines above, keeping what is on screen where it was. The view
+   * moves by however far the old first row moved. When the browser's scroll
+   * anchoring has already kept that row in place, it moved nowhere and the
+   * view does not move twice. Anchoring stays on because it also keeps the
+   * reader's place when rows above change height, as on a wrap toggle.
+   */
   private prepend(page: LogPage): void {
     this.hasMore = page.hasMore
     if (page.lines.length === 0) {
@@ -289,13 +295,16 @@ export class LogView {
       }
       fragment.append(this.row(line))
     }
-    const before = this.el.scroller.scrollHeight
+    const anchor = firstRow(this.el.list)
+    const anchorTop = anchor?.getBoundingClientRect().top ?? 0
     const top = this.el.list.firstElementChild
     if (top?.classList.contains('divider') && top.getAttribute('data-day') === String(day)) {
       top.remove()
     }
     this.el.list.prepend(fragment)
-    this.el.scroller.scrollTop += this.el.scroller.scrollHeight - before
+    if (anchor) {
+      this.el.scroller.scrollTop += anchor.getBoundingClientRect().top - anchorTop
+    }
     this.lastScrollTop = this.el.scroller.scrollTop
     this.rows += page.lines.length
     this.trimNewest()
