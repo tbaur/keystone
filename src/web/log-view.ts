@@ -78,6 +78,9 @@ export class LogView {
     this.options = options
     this.el = options.elements
     this.filters = filters
+    // prepend() keeps the view in place itself. Browser scroll anchoring would
+    // move it by the same height again, a page away from where the reader was.
+    this.el.scroller.style.overflowAnchor = 'none'
     this.el.scroller.addEventListener('scroll', () => this.onScroll(), { passive: true })
     this.listenForScrollUp()
     this.el.jump.addEventListener('click', () => this.jumpToLatest())

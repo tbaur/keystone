@@ -258,6 +258,19 @@ describe('LogView older lines', () => {
     assert.equal(browser.status.textContent, 'Start of the stored log')
   })
 
+  it('keeps the same line in view when they load a little below the top, where browsers anchor the scroll', async () => {
+    const older = Promise.withResolvers<LogPage>()
+    const { browser, olderRequests } = setup(page(lines(100, 129), true), { loadOlder: () => older.promise })
+    browser.scroller.scrollTop = 150
+    browser.settle()
+    assert.deepEqual(olderRequests, [100])
+    const top = browser.scroller.scrollTop
+    older.resolve(page(lines(80, 99)))
+    await settlePromises()
+    browser.settle()
+    assert.equal(browser.scroller.scrollTop, top + 20 * ROW_PX)
+  })
+
   it('says so when they fail to load', async () => {
     const { browser } = setup(page(lines(100, 129), true), { loadOlder: () => Promise.reject(new Error('offline')) })
     browser.scroller.scrollTop = 0
