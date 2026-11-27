@@ -219,8 +219,13 @@ class FakeFragment extends FakeElement {
 export class FakeScroller extends FakeElement {
   /** A browser fires one scroll event in the next frame after the position changes. */
   hasMoved = false
+  /** Like CSS. `overflowAnchor` other than 'none' turns on scroll anchoring, as browsers do by default. */
+  readonly style = { overflowAnchor: '' }
   private readonly content: FakeElement
   private top = 0
+  /** The row at the top of the view, and how far the view starts into it. Scroll anchoring keeps it in place. */
+  private anchor: FakeElement | null = null
+  private anchorOffset = 0
 
   constructor(content: FakeElement) {
     super('div')
@@ -232,24 +237,24 @@ export class FakeScroller extends FakeElement {
     return VIEW_PX
   }
 
+  /** Reading a size or position runs layout, as in a browser, and layout applies scroll anchoring. */
   get scrollHeight(): number {
-    return Math.max(VIEW_PX, this.content.children.length * ROW_PX)
+    this.keepAnchor()
+    return this.contentHeight()
   }
 
   get scrollTop(): number {
+    this.keepAnchor()
     return this.top
   }
 
   set scrollTop(value: number) {
-    const top = Math.max(0, Math.min(value, this.scrollHeight - VIEW_PX))
-    if (top !== this.top) {
-      this.top = top
-      this.hasMoved = true
-    }
+    this.moveTo(value)
+    this.pickAnchor()
   }
 
   get isAtBottom(): boolean {
-    return this.top === this.scrollHeight - VIEW_PX
+    return this.top === this.contentHeight() - VIEW_PX
   }
 
   /** The reader scrolls by `px`. Negative is up. */
@@ -257,9 +262,37 @@ export class FakeScroller extends FakeElement {
     this.scrollTop = this.top + px
   }
 
-  /** Layout: when the content gets shorter, the position comes in with it. */
+  /** Layout: anchoring first, then when the content gets shorter, the position comes in with it. */
   layout(): void {
+    this.keepAnchor()
     this.scrollTop = this.top
+  }
+
+  private contentHeight(): number {
+    return Math.max(VIEW_PX, this.content.children.length * ROW_PX)
+  }
+
+  private moveTo(value: number): void {
+    const top = Math.max(0, Math.min(value, this.contentHeight() - VIEW_PX))
+    if (top !== this.top) {
+      this.top = top
+      this.hasMoved = true
+    }
+  }
+
+  private pickAnchor(): void {
+    const index = Math.floor(this.top / ROW_PX)
+    this.anchor = this.content.children[index] ?? null
+    this.anchorOffset = this.top - index * ROW_PX
+  }
+
+  /** Scroll anchoring: rows added or removed above the anchor row move the position with it. Browsers skip it at the very top. */
+  private keepAnchor(): void {
+    if (this.style.overflowAnchor === 'none' || this.top === 0 || this.anchor?.parent !== this.content) {
+      return
+    }
+    this.moveTo(this.content.children.indexOf(this.anchor) * ROW_PX + this.anchorOffset)
+    this.pickAnchor()
   }
 }
 
