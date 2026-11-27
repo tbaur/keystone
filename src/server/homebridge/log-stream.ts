@@ -12,7 +12,7 @@ import { asRecord, asString } from '../json.ts'
 import type { Logger } from '../logger.ts'
 import { LineSplitter, parseLine, stripAnsiText, type LineContext } from '../logs/line-parser.ts'
 import { isUiBanner, replayStart } from '../logs/replay.ts'
-import { knownTimeZone, type StampContext } from '../logs/timestamp.ts'
+import { knownTimeZone, type DateOrder, type StampContext } from '../logs/timestamp.ts'
 import type { NewLogLine } from '../store/log-store.ts'
 import { AUTH_RETRY_MS, HomebridgeApiError, type HomebridgeApi } from './api-client.ts'
 import { Backoff } from './backoff.ts'
@@ -37,9 +37,11 @@ export interface StreamTiming {
   replayMaxMs: number
   /** How long the socket may take to connect, and then to send its first data. */
   connectTimeoutMs: number
+  /** The first wait before trying again after a failure. It doubles with each failure in a row. */
+  retryBaseMs: number
 }
 
-const DEFAULT_TIMING: StreamTiming = { replayQuietMs: 1000, replayMaxMs: 10_000, connectTimeoutMs: 10_000 }
+const DEFAULT_TIMING: StreamTiming = { replayQuietMs: 1000, replayMaxMs: 10_000, connectTimeoutMs: 10_000, retryBaseMs: 1000 }
 const TERMINAL_SIZE = { cols: 200, rows: 50 }
 /** A live line stamped further from its arrival than this has a time that cannot be right, so it gets the arrival time. */
 const MAX_LIVE_SKEW_MS = 36 * 60 * 60_000
@@ -63,17 +65,21 @@ export class LogStream {
   private context: (LineContext & { ts: number }) | null = null
   /** The Homebridge host's time zone, which its log times are written in. */
   private timeZone: string | null = null
+  /** The order of year, month and day in this host's log times, once a line has shown it. */
+  private dateOrder: DateOrder | null = null
   private wasConnected = false
   /** Times in a row that Homebridge UI closed the socket before sending anything. */
   private refusals = 0
   /** Set after a lost stream, so the next replay ends with a "reconnected" line. */
   private isRecovering = false
+  /** The error of the failure in progress, which was logged as a warning once. Later tries log at debug unless it changes. */
+  private failure: string | null = null
   private stopped = false
 
   constructor(options: LogStreamOptions) {
     this.options = options
     this.timing = { ...DEFAULT_TIMING, ...options.timing }
-    this.backoff = new Backoff({ random: options.random })
+    this.backoff = new Backoff({ baseMs: this.timing.retryBaseMs, random: options.random })
   }
 
   start(): void {
@@ -91,7 +97,10 @@ export class LogStream {
   }
 
   private async connect(): Promise<void> {
-    this.options.onState('connecting', null)
+    // A retry keeps the failed state, so the card keeps how long the stream has been down.
+    if (this.failure === null) {
+      this.options.onState('connecting', null)
+    }
     let token: string
     try {
       token = await this.options.api.accessToken()
@@ -161,6 +170,7 @@ export class LogStream {
     this.refusals = 0
     this.backoff.reset()
     this.clearSilenceTimer()
+    this.failure = null
     this.options.onState('connected', null)
     this.options.logger.info('log stream connected')
   }
@@ -236,7 +246,12 @@ export class LogStream {
     const message = error instanceof HomebridgeApiError ? error.message : 'unexpected error'
     this.options.onState(isAuth ? 'unauthorized' : 'unreachable', message)
     const delay = isAuth ? AUTH_RETRY_MS : this.backoff.next()
-    this.options.logger.warn('log stream unavailable', { error, retryInMs: delay })
+    if (message !== this.failure) {
+      this.options.logger.warn('log stream unavailable', { error, retryInMs: delay })
+    } else {
+      this.options.logger.debug('log stream still unavailable', { error, retryInMs: delay })
+    }
+    this.failure = message
     if (!this.stopped) {
       this.retryTimer = setTimeout(() => void this.connect(), delay)
     }
@@ -244,11 +259,13 @@ export class LogStream {
 
   private emit(rawLines: readonly string[], arrival: { receivedAt: number, isLive: boolean }): void {
     const { receivedAt, isLive } = arrival
-    const stamp: StampContext = { reference: receivedAt, timeZone: this.timeZone }
     const lines: NewLogLine[] = []
     for (const raw of rawLines) {
-      const { plugin, level, messageOffset, ts: stamped } = parseLine(raw, this.context, stamp)
-      const ts = stamped === null ? this.context?.ts ?? receivedAt : plausible(stamped, receivedAt, isLive)
+      const stamp: StampContext = { reference: receivedAt, timeZone: this.timeZone, order: this.dateOrder }
+      const { plugin, level, messageOffset, isEntry, ts: stamped, dateOrder } = parseLine(raw, this.context, stamp)
+      this.dateOrder = dateOrder ?? this.dateOrder
+      // A continuation keeps the time of its entry; an entry whose date cannot be placed gets its arrival time.
+      const ts = !isEntry ? this.context?.ts ?? receivedAt : stamped === null ? receivedAt : plausible(stamped, receivedAt, isLive)
       this.context = { plugin, level, ts }
       lines.push({ instance: this.options.instance, ts, receivedAt, plugin, level, system: false, raw, messageOffset })
     }
@@ -267,8 +284,8 @@ export class LogStream {
 
   /** Skip lines before the first timestamp: the replay can start partway through a line or a stack trace. */
   private firstTimestamped(lines: readonly string[]): number {
-    const stamp: StampContext = { reference: Date.now(), timeZone: this.timeZone }
-    const index = lines.findIndex((line) => parseLine(line, null, stamp).ts !== null)
+    const stamp: StampContext = { reference: Date.now(), timeZone: this.timeZone, order: this.dateOrder }
+    const index = lines.findIndex((line) => parseLine(line, null, stamp).isEntry)
     return index < 0 ? 0 : index
   }
 

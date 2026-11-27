@@ -62,7 +62,10 @@ describe('LogPipeline', () => {
     const { store, failing } = fakeStore()
     const logger = memoryLogger()
     let now = 0
-    const pipeline = new LogPipeline({ store, logger, onStored: () => undefined, flushMs: 10_000, now: () => now })
+    const changes: boolean[] = []
+    const pipeline = new LogPipeline({
+      store, logger, onStored: () => undefined, onFailingChange: (isFailing) => changes.push(isFailing), flushMs: 10_000, now: () => now,
+    })
     failing.on = true
     for (let i = 0; i < 5; i++) {
       now = i * 20_000
@@ -77,6 +80,7 @@ describe('LogPipeline', () => {
     pipeline.flush()
     assert.equal(pipeline.isFailing, false)
     assert.equal(logger.records.find((record) => record.msg === 'log lines stored again')?.lost, 5)
+    assert.deepEqual(changes, [true, false], 'once when writes start failing and once when they work again')
   })
 
   it('logs a failure while handing on stored lines and keeps going', () => {

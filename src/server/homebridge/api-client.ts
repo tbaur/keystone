@@ -141,7 +141,7 @@ export class HomebridgeApi {
       // A redirect would carry the login body, password included, to wherever it points.
       response = await this.fetch(`${this.baseUrl}/api${path}`, { ...init, redirect: 'manual', signal: AbortSignal.timeout(timeoutMs) })
     } catch (error) {
-      const reason = (error as Error).name === 'TimeoutError' ? `no answer within ${timeoutMs} ms` : 'connection failed'
+      const reason = isTimeout(error) ? `no answer within ${timeoutMs} ms` : 'connection failed'
       throw new HomebridgeApiError('unreachable', reason, { cause: error })
     }
     if (response.status >= 300 && response.status < 400) {
@@ -163,7 +163,17 @@ export class HomebridgeApi {
     try {
       return await response.json()
     } catch (error) {
-      throw new HomebridgeApiError('invalid', `${path} did not answer with JSON`, { cause: error })
+      if (error instanceof SyntaxError) {
+        throw new HomebridgeApiError('invalid', `${path} did not answer with JSON`, { cause: error })
+      }
+      // The body stopped arriving: the request's time ran out, or the connection broke.
+      const timeoutMs = this.options.timeoutMs ?? DEFAULT_TIMEOUT_MS
+      throw new HomebridgeApiError('unreachable', isTimeout(error) ? `no answer within ${timeoutMs} ms` : `${path} broke off its answer`, { cause: error })
     }
   }
+}
+
+/** True for the error that `AbortSignal.timeout` causes, before or during the body. */
+function isTimeout(error: unknown): boolean {
+  return error instanceof Error && (error.name === 'TimeoutError' || error.name === 'AbortError')
 }

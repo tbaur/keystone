@@ -7,7 +7,8 @@
 
 import assert from 'node:assert/strict'
 import { EventEmitter } from 'node:events'
-import type { IncomingMessage, ServerResponse } from 'node:http'
+import { request as httpRequest, type IncomingMessage, type ServerResponse } from 'node:http'
+import { connect } from 'node:net'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { describe, it } from 'node:test'
@@ -34,6 +35,7 @@ async function setup(t: { after: (fn: () => Promise<void> | void) => void }, ove
     users: { [USER]: await hashPassword(PASSWORD) },
     cookieSecure: false,
     trustProxy: false,
+    allowedHosts: [],
     logLevel: 'debug',
     instances: [{ name: 'example-1', apiUrl: homebridge.url, uiUrl: 'https://example-1.example.com', username: homebridge.username, password: homebridge.password }],
     ...overrides,
@@ -110,6 +112,58 @@ describe('dashboard HTTP', () => {
     assert.ok(Number(locked.headers.get('retry-after')) > 0)
     assert.ok(logger.records.some((record) => record.msg === 'login failed'))
     assert.ok(!JSON.stringify(logger.records).includes(PASSWORD))
+  })
+
+  it('answers a locked known user name and a locked unknown one the same way', async (t) => {
+    const { login } = await setup(t, { trustProxy: true })
+    for (const name of [USER, 'nosuch']) {
+      for (let i = 0; i < 10; i++) {
+        assert.equal((await login('wrong', { 'x-real-ip': `192.0.2.${i + 1}` }, name)).status, 401)
+      }
+    }
+    const known = await login('wrong', { 'x-real-ip': '198.51.100.1' }, USER)
+    const unknown = await login('wrong', { 'x-real-ip': '198.51.100.2' }, 'nosuch')
+    assert.equal(known.status, 429)
+    assert.equal(unknown.status, 429)
+    assert.deepEqual(await known.json(), await unknown.json())
+  })
+
+  it('answers only the allowed host names and loopback when allowedHosts is set', async (t) => {
+    const open = await setup(t)
+    const port = (base: string): number => Number(new URL(base).port)
+    assert.equal(await requestWithHost(port(open.base), '/healthz', 'rebound.example.net'), 503)
+    const strict = await setup(t, { allowedHosts: ['keystone.example.com'] })
+    assert.equal(await requestWithHost(port(strict.base), '/healthz', 'rebound.example.net'), 421)
+    assert.equal(await requestWithHost(port(strict.base), '/api/login', 'rebound.example.net:8590'), 421)
+    assert.notEqual(await requestWithHost(port(strict.base), '/healthz', 'Keystone.Example.com'), 421)
+    assert.notEqual(await requestWithHost(port(strict.base), '/healthz', `127.0.0.1:${port(strict.base)}`), 421)
+    assert.notEqual(await requestWithHost(port(strict.base), '/healthz', 'localhost'), 421)
+  })
+
+  it('names the limit when a user name or password is too long', async (t) => {
+    const { login } = await setup(t)
+    const long = await login('p'.repeat(1025))
+    assert.equal(long.status, 400)
+    assert.deepEqual(await long.json(), { error: 'bad_request', message: 'password is longer than 1024 characters' })
+    const longName = await login(PASSWORD, {}, 'u'.repeat(65))
+    assert.deepEqual(await longName.json(), { error: 'bad_request', message: 'username is longer than 64 characters' })
+  })
+
+  it('logs a client that disconnects in the middle of a body at debug level, not as a server error', async (t) => {
+    const { base, logger } = await setup(t)
+    const socket = connect(Number(new URL(base).port), '127.0.0.1')
+    socket.on('error', () => undefined)
+    let answer = ''
+    socket.on('data', (chunk: Buffer) => {
+      answer += chunk.toString()
+    })
+    // Node answers 100 Continue as it hands the request to the handler, which then waits for the body.
+    socket.write('POST /api/login HTTP/1.1\r\nHost: 127.0.0.1\r\nContent-Type: application/json\r\nContent-Length: 100\r\nExpect: 100-continue\r\n\r\n')
+    await waitFor(() => answer.includes('100 Continue'))
+    socket.write('{"user')
+    socket.destroy()
+    await waitFor(() => logger.records.some((record) => record.msg === 'request ended by the client'))
+    assert.equal(logger.records.some((record) => record.msg === 'request failed'), false)
   })
 
   it('ignores X-Real-IP unless trustProxy is on, and then only when it is an address', async (t) => {
@@ -321,24 +375,31 @@ class FakeResponse extends EventEmitter {
 }
 
 describe('request target', () => {
-  it('answers a target the URL parser rejects instead of rejecting the handler', () => {
+  it('answers a target the URL parser rejects with a 400, and logs no error', () => {
     const logger = memoryLogger()
-    const handler = createHandler({ config: { cookieSecure: false }, logger } as unknown as AppDeps)
+    // Only the fields that the handler reads before routing.
+    const handler = createHandler({ config: { cookieSecure: false, allowedHosts: [] }, logger } as unknown as AppDeps)
     const res = new FakeResponse()
-    const target = 'http://['
-    handler({ url: target, method: 'GET' } as IncomingMessage, res as unknown as ServerResponse)
-    assert.equal(res.status, 500)
+    handler({ url: 'http://[', method: 'GET', headers: {} } as IncomingMessage, res as unknown as ServerResponse)
+    assert.equal(res.status, 400)
     assert.equal(res.headers.get('x-content-type-options'), 'nosniff')
-    const body = JSON.parse(res.body) as { error: string, message: string }
-    assert.equal(body.error, 'internal')
-    assert.match(body.message, /^Something went wrong \(request [\w-]+\)\./)
-    const failed = logger.records.find((record) => record.msg === 'request failed')
-    assert.ok(failed)
-    assert.equal(failed.level, 'error')
-    assert.equal(failed.method, 'GET')
-    assert.equal(JSON.stringify(logger.records).includes(target), false)
+    assert.deepEqual(JSON.parse(res.body), { error: 'bad_request', message: 'the request target is not a valid URL' })
+    assert.equal(logger.records.some((record) => record.level === 'error'), false)
   })
 })
+
+/** A request with a Host header of our choosing, which fetch does not allow. */
+function requestWithHost(port: number, path: string, host: string): Promise<number> {
+  return new Promise((resolvePromise, reject) => {
+    const req = httpRequest({ host: '127.0.0.1', port, path, headers: { host } }, (res) => {
+      res.resume()
+      resolvePromise(res.statusCode ?? 0)
+    })
+    req.on('error', reject)
+    req.setTimeout(5000, () => req.destroy(new Error('no answer')))
+    req.end()
+  })
+}
 
 type Request = (path: string, init?: RequestInit) => Promise<Response>
 

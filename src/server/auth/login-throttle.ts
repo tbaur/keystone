@@ -18,6 +18,9 @@ const MAX_CONCURRENT_CHECKS = 2
 /** Above this many failures a minute from everywhere together, every login waits for the next minute. */
 const MAX_FAILURES_PER_MINUTE = 300
 const MINUTE_MS = 60_000
+/** An address that signed in as a user stays trusted for that user this long after its last sign-in. */
+const TRUST_MS = 30 * 24 * 60 * 60_000
+const MAX_TRUSTED = 10_000
 
 type KeyKind = keyof typeof FREE_FAILURES
 
@@ -33,6 +36,8 @@ interface Entry {
 /** A try that has its place reserved. Pass it to `finish` exactly once. */
 export interface Attempt {
   readonly keys: readonly string[]
+  /** The address and user name pair that a success makes trusted, when a name was given. */
+  readonly trustKey: string | null
 }
 
 export type Outcome = 'success' | 'failure' | 'abandoned'
@@ -41,28 +46,36 @@ export type Reservation = { attempt: Attempt } | { retryAfter: number, reason: '
 
 /**
  * Slows down password guessing. Per client address: five free failures, then
- * a lock that doubles from one minute up to fifteen. The same per known user
- * name after ten failures from any address. A success clears both. A try is
- * reserved before the password check, so a burst of parallel tries cannot all
- * pass before the first failure is counted.
+ * a lock that doubles from one minute up to fifteen. The same per user name
+ * after ten failures from any address, whether or not the name exists, so a
+ * lock never tells which names are real. A success clears both, and makes
+ * that address trusted for that user: its tries are then held back only by
+ * the address's own lock, not the user's lock or the cap for everyone, so a
+ * guesser elsewhere cannot lock the real user out. A try is reserved before
+ * the password check, so a burst of parallel tries cannot all pass before
+ * the first failure is counted.
  */
 export class LoginThrottle {
   private readonly entries = new Map<string, Entry>()
+  /** When each address and user name pair last signed in, oldest first. */
+  private readonly trusted = new Map<string, number>()
   private checking = 0
   private minute = { start: -Infinity, failures: 0 }
 
   /**
-   * Reserve a try for `address`, and for `username` when it names a real user.
+   * Reserve a try for `address`, and for `username` when one was given.
    * Returns the attempt, or how many seconds to wait.
    */
   begin(address: string, username: string | null, now = Date.now()): Reservation {
     if (this.checking >= MAX_CONCURRENT_CHECKS) {
       return { retryAfter: 1, reason: 'busy' }
     }
-    if (now - this.minute.start < MINUTE_MS && this.minute.failures >= MAX_FAILURES_PER_MINUTE) {
+    const trustKey = username === null ? null : `${addressKey(address)} ${username}`
+    const isTrusted = trustKey !== null && now - (this.trusted.get(trustKey) ?? -Infinity) < TRUST_MS
+    if (!isTrusted && now - this.minute.start < MINUTE_MS && this.minute.failures >= MAX_FAILURES_PER_MINUTE) {
       return { retryAfter: Math.ceil((this.minute.start + MINUTE_MS - now) / 1000), reason: 'locked' }
     }
-    const keys = [`address:${addressKey(address)}`, ...(username === null ? [] : [`user:${username}`])]
+    const keys = [`address:${addressKey(address)}`, ...(username === null || isTrusted ? [] : [`user:${username}`])]
     const waits = keys.map((key) => this.waitFor(key, now)).filter((wait) => wait !== null)
     const longest = waits.sort((a, b) => b.retryAfter - a.retryAfter)[0]
     if (longest) {
@@ -72,7 +85,7 @@ export class LoginThrottle {
       this.entry(key, now).inFlight += 1
     }
     this.checking += 1
-    return { attempt: { keys } }
+    return { attempt: { keys, trustKey } }
   }
 
   finish(attempt: Attempt, outcome: Outcome, now = Date.now()): void {
@@ -89,10 +102,25 @@ export class LoginThrottle {
         this.recordFailure(key, entry, now)
       }
     }
+    if (outcome === 'success' && attempt.trustKey !== null) {
+      this.trust(attempt.trustKey, now)
+    }
     if (outcome === 'failure') {
       this.countGlobalFailure(now)
     }
     this.evict(now)
+  }
+
+  /** Remember a sign-in, newest last, so the oldest trust goes first when there are too many. */
+  private trust(key: string, now: number): void {
+    this.trusted.delete(key)
+    this.trusted.set(key, now)
+    for (const [oldest, at] of this.trusted) {
+      if (this.trusted.size <= MAX_TRUSTED && now - at < TRUST_MS) {
+        break
+      }
+      this.trusted.delete(oldest)
+    }
   }
 
   /** How long `key` must wait: while it is locked, or briefly while earlier tries could still use up its free failures. */

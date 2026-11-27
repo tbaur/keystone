@@ -53,7 +53,7 @@ class FakeResponse extends EventEmitter {
   }
 }
 
-const EMPTY: Overview = { instances: [], logCounts: [] }
+const EMPTY: Overview = { instances: [], logCounts: [], store: 'ok' }
 
 function setup(t: { after: (fn: () => void) => void }, overview: () => Overview = () => EMPTY, heartbeatMs = 60_000) {
   const store = new LogStore(openDatabase(':memory:'))
@@ -120,6 +120,16 @@ describe('StreamHub', () => {
     await waitFor(() => kept.isEnded)
   })
 
+  it('turns away a browser that reconnects after the hub closed, so shutdown does not wait for it', (t) => {
+    const { hub, open, store } = setup(t)
+    hub.close()
+    const late = open()
+    assert.equal(late.status, 503)
+    assert.equal(late.isEnded, true)
+    hub.publishLines(store.append(lines(1)))
+    assert.equal(late.events('logs'), 0)
+  })
+
   it('sends one overview for a burst of changes, and survives an overview that throws', async (t) => {
     let shouldThrow = false
     const { hub, open, logger } = setup(t, () => {
@@ -131,8 +141,10 @@ describe('StreamHub', () => {
     hub.overviewChanged()
     hub.overviewChanged()
     await waitFor(() => res.events('overview') === 2)
-    await new Promise((resolve) => setTimeout(resolve, 30))
-    assert.equal(res.events('overview'), 2)
+    // A later change goes out after anything the burst scheduled, so a second send from the burst would arrive first.
+    hub.overviewChanged()
+    await waitFor(() => res.events('overview') >= 3)
+    assert.equal(res.events('overview'), 3)
     shouldThrow = true
     hub.overviewChanged()
     await waitFor(() => logger.records.some((record) => record.msg === 'could not send the overview'))

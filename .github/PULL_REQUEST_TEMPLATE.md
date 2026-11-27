@@ -21,9 +21,9 @@ What this changes and why.
 ## Checklist
 
 - [ ] Self-reviewed the diff
-- [ ] Docs updated if needed (see [Keeping docs in sync](../CONTRIBUTING.md#keeping-docs-in-sync))
+- [ ] Docs updated if needed (see [Keeping docs in sync](https://github.com/tbaur/keystone/blob/main/CONTRIBUTING.md#keeping-docs-in-sync))
 - [ ] Only placeholder addresses, host names and user names in code, tests and docs
-- [ ] The title uses Conventional Commits (`feat:`, `fix:`, `docs:` and so on) and reads well in the release notes. See [RELEASING.md](../RELEASING.md).
+- [ ] The title uses Conventional Commits (`feat:`, `fix:`, `docs:` and so on) and reads well in the release notes. See [RELEASING.md](https://github.com/tbaur/keystone/blob/main/RELEASING.md).
 
 ## Related issues
 

@@ -14,6 +14,9 @@
 export const ROW_PX = 20
 export const VIEW_PX = 400
 
+/** How many times code stepped from an element to the one before it, to check that a search does not walk the whole list. */
+export const steps = { previous: 0 }
+
 interface FakeEvent {
   type: string
   target: FakeElement
@@ -105,6 +108,7 @@ export class FakeElement extends FakeNode {
   }
 
   get previousElementSibling(): FakeElement | null {
+    steps.previous++
     const siblings = this.parent?.nodes ?? []
     return elementFrom(siblings, siblings.indexOf(this) - 1, -1)
   }
@@ -349,6 +353,7 @@ export class FakeBrowser {
     Object.assign(globalThis, {
       document: {
         createElement: (tag: string) => new FakeElement(tag),
+        createElementNS: (_namespace: string, tag: string) => new FakeElement(tag),
         createTextNode: (text: string) => new FakeText(text),
         createDocumentFragment: () => new FakeFragment(),
       },
@@ -362,6 +367,8 @@ export class FakeBrowser {
         return id
       },
       cancelAnimationFrame: (id: number) => frames.delete(id),
+      // So `instanceof HTMLElement` holds for the fake elements.
+      HTMLElement: FakeElement,
       ResizeObserver: class {
         constructor(callback: () => void) {
           observers.push(callback)

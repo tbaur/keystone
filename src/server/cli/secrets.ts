@@ -19,8 +19,9 @@
 import { createInterface } from 'node:readline/promises'
 import { parseArgs } from 'node:util'
 
-import { hashPassword } from '../auth/password.ts'
+import { hashPassword, MAX_PASSWORD_LENGTH } from '../auth/password.ts'
 import { ConfigError, configPath, readSettings, type Settings } from '../config.ts'
+import { errorMessage } from '../errors.ts'
 import { normalizeUsername, readSecretsFile, SecretsError, writeSecretsFile, type Secrets } from '../secrets.ts'
 import { HiddenLine, type HiddenResult } from './hidden-line.ts'
 
@@ -94,8 +95,8 @@ function readHidden(prompt: string): Promise<string> {
 /** Answers from a pipe: one line each, in order. */
 async function pipedAnswers(): Promise<Ask> {
   const chunks: Buffer[] = []
-  for await (const chunk of process.stdin as AsyncIterable<Buffer>) {
-    chunks.push(chunk)
+  for await (const piece of process.stdin) {
+    chunks.push(Buffer.isBuffer(piece) ? piece : Buffer.from(String(piece)))
   }
   const lines = Buffer.concat(chunks).toString('utf8').split('\n').map((line) => line.replace(/\r$/, ''))
   let next = 0
@@ -121,6 +122,9 @@ async function askUserHash({ ask, isTerminal }: Prompter, name: string, current:
   }
   if (value.length < MIN_LENGTH) {
     throw new Error(`use at least ${MIN_LENGTH} characters for the Keystone password`)
+  }
+  if (value.length > MAX_PASSWORD_LENGTH) {
+    throw new Error(`use at most ${MAX_PASSWORD_LENGTH} characters for the Keystone password`)
   }
   if (isTerminal && (await ask('Again: ')) !== value) {
     throw new Error('the two passwords differ')
@@ -160,7 +164,7 @@ function readArgs(): { config?: string, user?: string, removeUser?: string } {
       options: { config: { type: 'string' }, user: { type: 'string' }, 'remove-user': { type: 'string' } },
     }).values
   } catch (error) {
-    throw new Error(`${(error as Error).message}\n${USAGE}`, { cause: error })
+    throw new Error(`${errorMessage(error)}\n${USAGE}`, { cause: error })
   }
   if (values.user !== undefined && values['remove-user'] !== undefined) {
     throw new Error(`use --user or --remove-user, not both\n${USAGE}`)
@@ -195,6 +199,6 @@ async function main(): Promise<void> {
 
 main().catch((error: unknown) => {
   const isKnown = error instanceof ConfigError || error instanceof SecretsError
-  process.stderr.write(`secrets: ${isKnown ? error.message : (error as Error).message}\n`)
+  process.stderr.write(`secrets: ${isKnown ? error.message : errorMessage(error)}\n`)
   process.exit(1)
 })

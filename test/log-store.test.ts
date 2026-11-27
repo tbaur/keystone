@@ -108,6 +108,24 @@ describe('LogStore', () => {
     assert.equal(page.hasMore, true)
   })
 
+  it('reads no more than its budget of lines for a search the index cannot answer, and says where to go on', () => {
+    const small = new LogStore(openDatabase(':memory:'), { scanBudget: 4 })
+    small.append(Array.from({ length: 10 }, (_, i) => line({ ts: 1000 + i, raw: i === 1 ? 'zz match' : `line ${i}` })))
+    const pages = []
+    let page = small.page({ search: 'zz' }, 5)
+    pages.push(page)
+    while (page.lines.length === 0 && page.hasMore && page.nextBefore !== undefined) {
+      page = small.page({ search: 'zz' }, 5, page.nextBefore)
+      pages.push(page)
+    }
+    assert.deepEqual(pages.map((each) => each.lines.length), [0, 0, 1], 'four lines read per page, so the match is in the third')
+    assert.equal(pages[0]?.nextBefore, 7, 'the fourth newest line, which the first page read last')
+    assert.deepEqual(page.lines.map((each) => each.message), ['zz match'])
+    assert.equal(page.hasMore, false)
+    assert.equal(page.nextBefore, undefined)
+    assert.equal(small.page({ search: 'line' }, 3).nextBefore, undefined, 'a full page needs no hint')
+  })
+
   it('returns the lines after an id, for a stream that reconnects', () => {
     const stored = store.append([line(), line(), line()])
     assert.deepEqual(store.after(stored[0]!.id, 10).map((l) => l.id), [stored[1]!.id, stored[2]!.id])
@@ -135,9 +153,12 @@ describe('LogStore', () => {
 
   it('prunes by arrival time, then by count, a batch at a time', () => {
     store.append([line({ receivedAt: 1 }), line({ receivedAt: 2 }), line({ receivedAt: 5000 }), line({ receivedAt: 6000 }), line({ receivedAt: 7000 })])
-    assert.equal(store.pruneBatch(1000, 2, 1), 1)
-    assert.equal(store.pruneBatch(1000, 2, 10), 2)
-    assert.equal(store.pruneBatch(1000, 2, 10), 0)
+    const capId = store.capThreshold(2)
+    assert.equal(capId, 3, 'the newest two ids stay')
+    assert.equal(store.capThreshold(10), 0, 'nothing is over a cap of ten')
+    assert.equal(store.pruneBatch(1000, capId, 1), 1)
+    assert.equal(store.pruneBatch(1000, capId, 10), 2)
+    assert.equal(store.pruneBatch(1000, capId, 10), 0)
     assert.equal(store.page({}, 10).lines.length, 2)
     assert.deepEqual(store.page({ search: 'hello' }, 10).lines.length, 2, 'the search index follows deletes')
     store.optimize()

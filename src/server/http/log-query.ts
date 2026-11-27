@@ -9,8 +9,9 @@ import { MAX_PAGE, type LogFilter } from '../store/log-store.ts'
 import { BadRequest } from './http-utils.ts'
 
 const DEFAULT_PAGE = 300
-const MAX_SEARCH = 200
-const MAX_PLUGIN = 80
+/** The longest search and plugin name accepted. src/web/filters.ts cuts a URL's values to these; a test keeps them equal. */
+export const MAX_SEARCH = 200
+export const MAX_PLUGIN = 80
 const PARAMETERS = new Set(['instance', 'level', 'plugin', 'q', 'before', 'limit'])
 
 export interface LogQuery {

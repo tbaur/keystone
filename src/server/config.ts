@@ -5,10 +5,10 @@
  * See LICENSE file for full license text
  */
 
-import { readFileSync } from 'node:fs'
 import { isIP } from 'node:net'
 import { dirname, resolve } from 'node:path'
 
+import { readJsonFile } from './errors.ts'
 import { isLevel, type Level } from './logger.ts'
 import { asArray, asRecord, type JsonRecord } from './json.ts'
 import { loadSecrets } from './secrets.ts'
@@ -39,6 +39,13 @@ export interface Settings {
    * since any local process could otherwise pick its own address.
    */
   trustProxy: boolean
+  /**
+   * The host names that browsers use to reach Keystone, lowercased. When set,
+   * a request with any other Host header is refused, so a page on another site
+   * cannot reach Keystone by DNS rebinding. Loopback names always work. Empty
+   * accepts every Host header.
+   */
+  allowedHosts: string[]
   logLevel: Level
   instances: InstanceSettings[]
 }
@@ -63,7 +70,8 @@ const MAX_INSTANCES = 8
 const LEVELS_TEXT = 'debug, info, warn or error'
 /** Keys that hold secrets. They get their own message, which points at the secrets file. */
 const SECRET_KEYS = ['users', 'passwordHash', 'password']
-const ROOT_KEYS = ['listen', 'dataDir', 'secretsFile', 'retentionDays', 'cookieSecure', 'trustProxy', 'logLevel', 'instances']
+const ROOT_KEYS = ['listen', 'dataDir', 'secretsFile', 'retentionDays', 'cookieSecure', 'trustProxy', 'allowedHosts', 'logLevel', 'instances']
+const MAX_ALLOWED_HOSTS = 16
 const LISTEN_KEYS = ['host', 'port']
 const INSTANCE_KEYS = ['name', 'apiUrl', 'uiUrl', 'username']
 
@@ -98,13 +106,11 @@ export function loadConfig(path: string, env: NodeJS.ProcessEnv = {}): Config {
 
 /** Read and validate config.json alone. */
 export function readSettings(path: string, env: NodeJS.ProcessEnv = {}): Settings {
-  let raw: unknown
-  try {
-    raw = JSON.parse(readFileSync(path, 'utf8'))
-  } catch (error) {
-    throw new ConfigError(path, [`not valid JSON: ${(error as Error).message}`])
+  const file = readJsonFile(path)
+  if ('problem' in file) {
+    throw new ConfigError(path, [file.isMissing ? `${file.problem}; copy config.example.json there and edit it` : file.problem])
   }
-  return parseSettings(raw, { path, env })
+  return parseSettings(file.value, { path, env })
 }
 
 export function parseSettings(raw: unknown, context: { path: string, env: NodeJS.ProcessEnv }): Settings {
@@ -128,6 +134,7 @@ export function parseSettings(raw: unknown, context: { path: string, env: NodeJS
     retentionDays: reader.integer('retentionDays', 7, [1, 90]),
     cookieSecure: reader.boolean('cookieSecure', true),
     trustProxy: reader.boolean('trustProxy', false),
+    allowedHosts: parseAllowedHosts(root?.allowedHosts, problems),
     logLevel: parseLogLevel(reader, context.env, problems),
     instances: parseInstances(root?.instances, problems),
   }
@@ -165,6 +172,29 @@ function parseListen(value: unknown, problems: string[]): Settings['listen'] {
     problems.push(`listen.host must be an IP address or a host name, not "${host}"`)
   }
   return { host, port: reader.integer('port', 8590, [1, 65535]) }
+}
+
+/** Host names or IP addresses, without ports; an IPv6 address goes in brackets, as in a URL. */
+function parseAllowedHosts(value: unknown, problems: string[]): string[] {
+  if (value === undefined) {
+    return []
+  }
+  const example = 'allowedHosts must be a list of host names such as ["keystone.example.com"]'
+  if (!Array.isArray(value) || value.length > MAX_ALLOWED_HOSTS) {
+    problems.push(`${example}, with at most ${MAX_ALLOWED_HOSTS}`)
+    return []
+  }
+  const hosts: string[] = []
+  for (const item of value) {
+    const host = typeof item === 'string' ? item.toLowerCase() : ''
+    const isAddress = isIP(host) === 4 || (host.startsWith('[') && host.endsWith(']') && isIP(host.slice(1, -1)) === 6)
+    if (!isAddress && !HOST_NAME.test(host)) {
+      problems.push(`${example}; "${String(item)}" is not one (leave out the scheme and port)`)
+    } else {
+      hosts.push(host)
+    }
+  }
+  return hosts
 }
 
 function parseInstances(value: unknown, problems: string[]): InstanceSettings[] {

@@ -7,7 +7,7 @@
 
 import type { ChildBridgeSummary, HostStats, InstanceSnapshot, LogCount, Overview, PluginSummary } from '../shared/types.ts'
 import { h, icon } from './dom.ts'
-import type { Filters } from './filters.ts'
+import { CORE_PLUGIN, type Filters } from './filters.ts'
 import { formatAgo, formatDuration, formatMbps, plural } from './format.ts'
 import { formatPluginVersion, formatVersion, hasPluginUpdate, hasUpdate, pluginsOutsideBridges } from './plugins.ts'
 
@@ -48,7 +48,7 @@ export function renderInstances(container: HTMLElement, overview: Overview, hand
 
 /** Everything a card shows: the snapshot without the host stats, which live in the top bar, and the ages as displayed. */
 function cardKey(instance: InstanceSnapshot, counts: readonly LogCount[], colour: number, now: number): string {
-  const ages = [formatAgo(instance.api.since, now), instance.updatedAt === null ? '' : formatAgo(instance.updatedAt, now)]
+  const ages = [formatAgo(instance.api.since, now), formatAgo(instance.logs.since, now), instance.updatedAt === null ? '' : formatAgo(instance.updatedAt, now)]
   return JSON.stringify([{ ...instance, host: null }, counts, colour, ages])
 }
 
@@ -138,7 +138,7 @@ function connectionNotice(instance: InstanceSnapshot, now: number): HTMLElement 
     }
   }
   if (instance.logs.state !== 'connected' && instance.logs.state !== 'connecting') {
-    problems.push(`Log stream: ${instance.logs.error ?? instance.logs.state}; retrying`)
+    problems.push(`Log stream: ${instance.logs.error ?? instance.logs.state} (${formatAgo(instance.logs.since, now)}); retrying`)
   }
   if (instance.api.state === 'connected') {
     if (instance.pluginsError) problems.push(`Plugin updates: ${instance.pluginsError}`)
@@ -210,7 +210,7 @@ function logItems(name: string, counts: readonly LogCount[], handlers: OverviewH
   const summary = [errorCount > 0 && plural(errorCount, 'error'), warnCount > 0 && plural(warnCount, 'warning')].filter(Boolean).join(', ')
   const head = item('alert', errorCount > 0 ? 'err' : 'warn', `${summary} in 24 h`, () => handlers.focus({ instances: [name], level: 'warn' }))
   const top = errors.slice(0, TOP_PLUGINS).map((count) => item(null, 'err', `${count.plugin ?? 'Homebridge'} · ${count.count}`,
-    () => handlers.focus({ instances: [name], level: 'error', plugin: count.plugin ?? '' }), 'sub'))
+    () => handlers.focus({ instances: [name], level: 'error', plugin: count.plugin ?? CORE_PLUGIN }), 'sub'))
   return [head, ...top]
 }
 

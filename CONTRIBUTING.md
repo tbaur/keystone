@@ -24,7 +24,7 @@ Keystone stays read-only toward Homebridge. A feature that would change anything
 
 ### Pull requests
 
-1. Create a branch, for example `git checkout -b feature/short-description`.
+1. Create a branch named for the change type, for example `git checkout -b feat/short-description` or `fix/short-description`.
 2. Keep the change focused, and add tests for new behavior.
 3. Run the checks below.
 4. Open the pull request with a [Conventional Commits](https://www.conventionalcommits.org) title.

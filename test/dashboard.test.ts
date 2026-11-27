@@ -40,6 +40,14 @@ describe('Dashboard health', () => {
     assert.equal(failing.store, 'failing')
   })
 
+  it('tells the page when lines cannot be stored, as /healthz does', () => {
+    let isFailing = false
+    const dashboard = new Dashboard({ monitors: [], store, isStoreFailing: () => isFailing })
+    assert.equal(dashboard.overview().store, 'ok')
+    isFailing = true
+    assert.equal(dashboard.overview().store, 'failing')
+  })
+
   it('caches the 24-hour counts for a minute', () => {
     const dashboard = new Dashboard({ monitors: [], store, isStoreFailing: () => false })
     const first = dashboard.overview(1_000_000)

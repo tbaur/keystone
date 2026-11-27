@@ -6,15 +6,20 @@
  */
 
 import type { LogLine, Overview } from '../shared/types.ts'
-import { LiveStream, fetchLogs, fetchOverview, signOut, type StreamStatus } from './api.ts'
+import { ApiError, LiveStream, fetchLogs, fetchOverview, messageOf, signOut, type StreamStatus } from './api.ts'
 import { byId, h } from './dom.ts'
-import { isFiltered, NO_FILTERS, readFilters, toParams, type Filters, type LevelFilter } from './filters.ts'
+import { CORE_PLUGIN, isFiltered, isLevelFilter, NO_FILTERS, readFilters, toParams, withKnownInstances, type Filters } from './filters.ts'
 import { LogView } from './log-view.ts'
 import { renderHost, renderInstances } from './overview-view.ts'
 
 const COLOURS = 8
 const SEARCH_DEBOUNCE_MS = 300
 const AGE_REFRESH_MS = 30_000
+/** The stream never renews the session, so the page asks the server something this often. A session renews in its last 15 days. */
+const SESSION_REFRESH_MS = 6 * 60 * 60_000
+/** After a failed request, the first wait before trying again. It doubles up to RETRY_MAX_MS. */
+const RETRY_BASE_MS = 2000
+const RETRY_MAX_MS = 60_000
 const WRAP_KEY = 'keystone.wrap'
 const HOST_KEY = 'keystone.host'
 const TITLE = document.title
@@ -42,6 +47,9 @@ let knownPlugins: string[] = []
 let hiddenErrors = 0
 let hostInstance = ''
 let latest: Overview | null = null
+let stream: LiveStream | null = null
+/** What the banner says, by what it is about, so one problem clearing does not hide another. */
+const banners = new Map<'start' | 'log' | 'store' | 'stream', string>()
 
 const colourOf = (instance: string): number => Math.max(0, instanceNames.indexOf(instance)) % COLOURS
 
@@ -60,31 +68,59 @@ const view = new LogView({
 
 let reloads = 0
 
-/** Load the newest page for the current filters. Only the latest of overlapping reloads is shown. */
+/**
+ * Load the newest page for the current filters. Only the latest of
+ * overlapping reloads is shown. Filters the server refuses are dropped; any
+ * other failure is tried again, with a growing wait, until a page loads.
+ */
 async function reload(): Promise<void> {
   const reloadNumber = ++reloads
-  const wanted = filters
   view.pause()
-  try {
-    const page = await fetchLogs(wanted)
-    if (reloadNumber === reloads) {
-      view.reset(page, wanted)
-      showBanner(null)
-    }
-  } catch (error) {
-    if (reloadNumber === reloads) {
-      view.reset({ lines: [], hasMore: false, latestId: Number.MAX_SAFE_INTEGER }, wanted)
-      showBanner(`Could not load the log: ${(error as Error).message}`)
+  for (let attempt = 0; reloadNumber === reloads; attempt++) {
+    const wanted = filters
+    try {
+      const page = await fetchLogs(wanted)
+      if (reloadNumber === reloads) {
+        view.reset(page, wanted)
+        setBanner('log', null)
+        // The stream starts after the first page, so no line falls between the two.
+        stream ??= new LiveStream(page.latestId, streamHandlers)
+      }
+      return
+    } catch (error) {
+      if (reloadNumber !== reloads) {
+        return
+      }
+      if (error instanceof ApiError && error.status === 400 && isFiltered(wanted)) {
+        setBanner('log', `Could not use these filters (${error.message}), so every line is shown.`)
+        useFilters(NO_FILTERS)
+        continue
+      }
+      setBanner('log', `Could not load the log: ${messageOf(error)}. Trying again…`)
+      await wait(retryDelay(attempt))
     }
   }
 }
 
+function retryDelay(attempt: number): number {
+  return Math.min(RETRY_BASE_MS * 2 ** attempt, RETRY_MAX_MS)
+}
+
+function wait(ms: number): Promise<void> {
+  return new Promise((resolvePromise) => window.setTimeout(resolvePromise, ms))
+}
+
 function applyFilters(next: Filters): void {
+  useFilters(next)
+  void reload()
+}
+
+/** Make `next` the filters: in the URL and the controls, without loading a page. */
+function useFilters(next: Filters): void {
   filters = next
   const query = toParams(filters).toString()
   window.history.replaceState(null, '', query ? `?${query}` : window.location.pathname)
   syncControls()
-  void reload()
 }
 
 function syncControls(): void {
@@ -118,10 +154,14 @@ function renderInstanceChips(): void {
 
 /** The plugin menu lists every plugin seen in the log or in the error counts. */
 function refreshPluginOptions(): void {
-  const names = [...new Set([...knownPlugins, ...view.plugins, filters.plugin].filter(Boolean))].sort((a, b) => a.localeCompare(b))
-  const current = [...el.pluginFilter.options].map((option) => option.value).slice(1)
+  const names = [...new Set([...knownPlugins, ...view.plugins, filters.plugin].filter((name) => name && name !== CORE_PLUGIN))]
+    .sort((a, b) => a.localeCompare(b))
+  const current = [...el.pluginFilter.options].map((option) => option.value).slice(2)
   if (names.join('\n') !== current.join('\n')) {
-    el.pluginFilter.replaceChildren(h('option', { value: '' }, 'All plugins'), ...names.map((name) => h('option', { value: name }, name)))
+    el.pluginFilter.replaceChildren(
+      h('option', { value: '' }, 'All plugins'),
+      h('option', { value: CORE_PLUGIN }, 'Homebridge itself'),
+      ...names.map((name) => h('option', { value: name }, name)))
   }
   el.pluginFilter.value = filters.plugin
 }
@@ -144,6 +184,7 @@ function showHostOf(name: string): void {
 
 function onOverview(overview: Overview): void {
   latest = overview
+  setBanner('store', overview.store === 'failing' ? 'New log lines cannot be saved right now. The server log has the error.' : null)
   knownPlugins = [...new Set(overview.logCounts.map((count) => count.plugin).filter((name): name is string => name !== null))]
   renderCards()
   showHostOf(hostInstance)
@@ -169,9 +210,14 @@ function setLive(status: StreamStatus): void {
   el.liveText.textContent = status === 'live' ? 'Live' : 'Reconnecting…'
 }
 
-function showBanner(message: string | null): void {
-  el.banner.hidden = message === null
-  el.banner.textContent = message ?? ''
+function setBanner(topic: 'start' | 'log' | 'store' | 'stream', message: string | null): void {
+  if (message === null) {
+    banners.delete(topic)
+  } else {
+    banners.set(topic, message)
+  }
+  el.banner.hidden = banners.size === 0
+  el.banner.textContent = [...banners.values()].join(' ')
 }
 
 function setWrap(isWrapped: boolean): void {
@@ -187,9 +233,9 @@ function bindControls(): void {
     searchTimer = window.setTimeout(() => applyFilters({ ...filters, search: el.search.value.trim() }), SEARCH_DEBOUNCE_MS)
   })
   el.levelFilter.addEventListener('click', (event) => {
-    const level = (event.target as HTMLElement).closest<HTMLButtonElement>('button')?.dataset.level
-    if (level !== undefined) {
-      applyFilters({ ...filters, level: level as LevelFilter })
+    const level = event.target instanceof Element ? event.target.closest<HTMLButtonElement>('button')?.dataset.level : undefined
+    if (isLevelFilter(level)) {
+      applyFilters({ ...filters, level })
     }
   })
   el.pluginFilter.addEventListener('focus', refreshPluginOptions)
@@ -227,23 +273,51 @@ function onKey(event: KeyboardEvent): void {
   }
 }
 
+const streamHandlers = {
+  onLines,
+  onOverview,
+  onReset: () => void reload(),
+  onStatus: setLive,
+  onBadEvent: (error: unknown) => setBanner('stream', `The server sent something this page cannot read (${messageOf(error)}). Reload the page.`),
+}
+
+/** The overview, tried again with a growing wait until the server answers. */
+async function firstOverview(): Promise<Overview> {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      const overview = await fetchOverview()
+      setBanner('start', null)
+      return overview
+    } catch (error) {
+      setBanner('start', `Could not load Keystone: ${messageOf(error)}. Trying again…`)
+      await wait(retryDelay(attempt))
+    }
+  }
+}
+
+/** Ask the server for the overview now and then, which also renews the session. A failure tries again sooner. */
+function keepSessionAlive(delay = SESSION_REFRESH_MS): void {
+  window.setTimeout(() => {
+    fetchOverview().then((overview) => {
+      onOverview(overview)
+      keepSessionAlive()
+    }, () => keepSessionAlive(RETRY_MAX_MS))
+  }, delay)
+}
+
 async function start(): Promise<void> {
   bindControls()
   setWrap(window.localStorage.getItem(WRAP_KEY) === '1')
-  const [overview, page] = await Promise.all([fetchOverview(), fetchLogs(filters)])
+  const overview = await firstOverview()
   instanceNames = overview.instances.map((instance) => instance.name)
   renderInstanceChips()
   renderHostPicker()
   onOverview(overview)
-  view.reset(page, filters)
-  syncControls()
+  // A bookmark can name an instance that has since been renamed or removed.
+  useFilters(withKnownInstances(filters, instanceNames))
   window.setInterval(renderCards, AGE_REFRESH_MS)
-  new LiveStream(page.latestId, {
-    onLines,
-    onOverview,
-    onReset: () => void reload(),
-    onStatus: setLive,
-  })
+  keepSessionAlive()
+  await reload()
 }
 
-start().catch((error: unknown) => showBanner(`Could not load Keystone: ${(error as Error).message}`))
+start().catch((error: unknown) => setBanner('start', `Could not start Keystone: ${messageOf(error)}. Reload the page.`))

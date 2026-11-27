@@ -73,6 +73,25 @@ describe('LogStream', () => {
     assert.equal(line?.ts, BASE + 1000)
   })
 
+  it('learns the date order from the log, and stamps an entry whose date it cannot place with its arrival', async (t) => {
+    const today = new Date(BASE)
+    const proving = Date.UTC(today.getUTCFullYear(), today.getUTCMonth() - 2, 21, 8)
+    const ambiguous = Date.UTC(today.getUTCFullYear(), today.getUTCMonth() - 1, 3, 8)
+    const ug = (instant: number): string => new Date(instant).toLocaleString('ug', { timeZone: 'UTC' })
+    const { stream, store } = await setup(t, [
+      homebridgeLine(ug(proving), 'Example', 'proves the order'),
+      homebridgeLine(ug(ambiguous), 'Example', 'reads both ways'),
+      homebridgeLine('1/2/1900, 10:00:00', 'Example', 'no calendar has this year'),
+    ], { timeZone: 'UTC' })
+    const started = Date.now()
+    stream.start()
+    const lines = await waitFor(() => store.after(0, 10).length === 3 && store.after(0, 10))
+    assert.deepEqual(lines.map((line) => line.plugin), ['Example', 'Example', 'Example'])
+    assert.equal(lines[0]?.ts, proving)
+    assert.equal(lines[1]?.ts, ambiguous)
+    assert.ok((lines[2]?.ts ?? 0) >= started && (lines[2]?.ts ?? 0) <= Date.now())
+  })
+
   it('drops the cut-off line that a first replay starts with', async (t) => {
     const cut = homebridgeLine(at(1), 'Example', 'cut off').slice(12)
     const { stream, messages } = await setup(t, [cut, homebridgeLine(at(2), 'Example', 'whole')])
@@ -129,6 +148,25 @@ describe('LogStream', () => {
     await waitFor(() => states.includes('unreachable'), 5000)
     assert.ok(!states.includes('connected'))
     assert.equal(errors[0], 'no log data')
+  })
+
+  it('warns once while the stream stays down, and keeps the failed state between tries', async (t) => {
+    const homebridge = await new FakeHomebridge().start()
+    const url = homebridge.url
+    await homebridge.stop()
+    const states: ConnectionState[] = []
+    const logger = memoryLogger()
+    const api = new HomebridgeApi({ baseUrl: url, username: 'example', password: 'test-password' })
+    const stream = new LogStream({
+      instance: 'example-1', api, logger, timing: { ...TIMING, retryBaseMs: 20 }, random: () => 0,
+      recentLines: () => [], onLines: () => undefined, onState: (state) => states.push(state),
+    })
+    t.after(() => stream.stop())
+    stream.start()
+    await waitFor(() => logger.records.filter((record) => record.msg === 'log stream still unavailable').length >= 2)
+    assert.equal(logger.records.filter((record) => record.msg === 'log stream unavailable').length, 1)
+    assert.deepEqual([...new Set(states)], ['connecting', 'unreachable'])
+    assert.equal(states.indexOf('connecting'), 0, 'only the first try reports connecting')
   })
 
   it('reports a wrong password as unauthorized', async (t) => {

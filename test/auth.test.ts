@@ -143,6 +143,43 @@ describe('LoginThrottle', () => {
     assert.ok('attempt' in throttle.begin('198.51.100.1', null, 0))
   })
 
+  it('locks every user name the same way, whether or not it exists', () => {
+    const throttle = new LoginThrottle()
+    for (let i = 0; i < 10; i++) {
+      fail(throttle, `192.0.2.${i + 1}`, 'nosuch')
+    }
+    assert.equal('retryAfter' in throttle.begin('198.51.100.1', 'nosuch', 0), true)
+  })
+
+  it('lets an address that signed in as a user past that user\'s lock and the cap for everyone, but not its own lock', () => {
+    const throttle = new LoginThrottle()
+    throttle.finish(attemptOf(throttle.begin('203.0.113.5', 'example', 0)), 'success', 0)
+    for (let i = 0; i < 10; i++) {
+      fail(throttle, `192.0.2.${i + 1}`, 'example', 1000)
+    }
+    // With the ten above, this reaches the cap of 300 failures a minute from everywhere.
+    for (let i = 0; i < 290; i++) {
+      fail(throttle, `10.0.${Math.floor(i / 250)}.${i % 250}`, null, 1000)
+    }
+    assert.equal('retryAfter' in throttle.begin('198.51.100.1', 'example', 2000), true, 'another address is locked out')
+    assert.equal('retryAfter' in throttle.begin('198.51.100.2', null, 2000), true, 'the cap holds for everyone else')
+    throttle.finish(attemptOf(throttle.begin('203.0.113.5', 'example', 2000)), 'abandoned', 2000)
+    for (let i = 0; i < 5; i++) {
+      fail(throttle, '203.0.113.5', 'example', 2000)
+    }
+    assert.equal('retryAfter' in throttle.begin('203.0.113.5', 'example', 2000), true, 'its own address lock still holds')
+  })
+
+  it('forgets a trusted address 30 days after its last sign-in', () => {
+    const throttle = new LoginThrottle()
+    const day = 24 * 60 * 60_000
+    throttle.finish(attemptOf(throttle.begin('203.0.113.5', 'example', 0)), 'success', 0)
+    for (let i = 0; i < 10; i++) {
+      fail(throttle, `192.0.2.${i + 1}`, 'example', 30 * day)
+    }
+    assert.equal('retryAfter' in throttle.begin('203.0.113.5', 'example', 30 * day), true)
+  })
+
   it('stops every login for the rest of the minute after 300 failures from anywhere', () => {
     const throttle = new LoginThrottle()
     for (let i = 0; i < 300; i++) {

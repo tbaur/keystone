@@ -20,16 +20,36 @@ export interface Filters {
 
 export const NO_FILTERS: Filters = { instances: [], level: '', plugin: '', search: '' }
 
-/** Filters live in the URL, so a bookmark or a reload keeps them. */
+/**
+ * The plugin filter for lines from Homebridge itself, which have no plugin.
+ * A plugin name cannot hold `]`, so no plugin can have this name. The server
+ * (src/server/store/log-store.ts) uses the same value; a test keeps them equal.
+ */
+export const CORE_PLUGIN = '[core]'
+/** The longest search and plugin name that the server accepts (src/server/http/log-query.ts); a test keeps them equal. */
+export const MAX_SEARCH = 200
+export const MAX_PLUGIN = 80
+
+/** Filters live in the URL, so a bookmark or a reload keeps them. Values longer than the server accepts are cut to fit. */
 export function readFilters(search: string): Filters {
   const params = new URLSearchParams(search)
   const level = params.get('level') ?? ''
   return {
     instances: (params.get('instance') ?? '').split(',').filter(Boolean),
     level: level === 'warn' || level === 'error' ? level : '',
-    plugin: params.get('plugin') ?? '',
-    search: params.get('q') ?? '',
+    plugin: (params.get('plugin') ?? '').trim().slice(0, MAX_PLUGIN),
+    search: (params.get('q') ?? '').trim().slice(0, MAX_SEARCH),
   }
+}
+
+/** The filters without instances that no longer exist, such as one renamed since a bookmark was made. */
+export function withKnownInstances(filters: Filters, known: readonly string[]): Filters {
+  const instances = filters.instances.filter((name) => known.includes(name))
+  return instances.length === filters.instances.length ? filters : { ...filters, instances }
+}
+
+export function isLevelFilter(value: string | undefined): value is LevelFilter {
+  return value === '' || value === 'warn' || value === 'error'
 }
 
 export function toParams(filters: Filters): URLSearchParams {
@@ -54,7 +74,11 @@ export function matches(line: LogLine, filters: Filters): boolean {
   if (filters.instances.length > 0 && !filters.instances.includes(line.instance)) return false
   if (filters.level === 'error' && line.level !== 'error') return false
   if (filters.level === 'warn' && line.level !== 'error' && line.level !== 'warn') return false
-  if (filters.plugin && line.plugin !== filters.plugin) return false
+  if (filters.plugin === CORE_PLUGIN) {
+    if (line.plugin !== null || line.system) return false
+  } else if (filters.plugin && line.plugin !== filters.plugin) {
+    return false
+  }
   const query = filters.search.trim().toLowerCase()
   if (query) {
     const haystack = `${line.plugin ?? ''} ${stripAnsi(line.message)}`.toLowerCase()

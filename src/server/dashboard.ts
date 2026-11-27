@@ -38,6 +38,7 @@ export class Dashboard {
     return {
       instances: this.deps.monitors.map((monitor) => monitor.snapshot()),
       logCounts: this.counts.value,
+      store: this.deps.isStoreFailing() ? 'failing' : 'ok',
     }
   }
 

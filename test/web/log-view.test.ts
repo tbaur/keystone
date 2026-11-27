@@ -9,9 +9,9 @@ import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 
 import type { LogLine, LogPage } from '../../src/shared/types.ts'
-import { NO_FILTERS, type Filters } from '../../src/web/filters.ts'
+import { CORE_PLUGIN, NO_FILTERS, type Filters } from '../../src/web/filters.ts'
 import { LogView } from '../../src/web/log-view.ts'
-import { FakeBrowser, ROW_PX } from './fake-dom.ts'
+import { FakeBrowser, ROW_PX, steps } from './fake-dom.ts'
 
 const NOON = new Date(2026, 0, 15, 12).getTime()
 const DAY_MS = 86_400_000
@@ -230,6 +230,46 @@ describe('LogView order and size', () => {
     assert.equal(browser.status.textContent, '')
   })
 
+  it('puts several late lines from a reconnect each in its place, between days', () => {
+    const day = (id: number, days: number): LogLine => line(id, { ts: NOON + days * DAY_MS + id * 1000 })
+    const { browser, view } = setup(page([day(1, 0), day(2, 0), day(3, 1), day(4, 1), day(5, 2)]))
+    view.receive([day(10, 2), day(6, 0), day(7, 1), day(8, 1), day(9, 2)])
+    browser.settle()
+    assert.deepEqual(rowIds(browser), [1, 2, 6, 3, 4, 7, 8, 5, 9, 10])
+    assert.equal(dividerCount(browser), 3)
+  })
+
+  it('finds the place of late lines without walking back through the list', () => {
+    const { browser, view } = setup(page(lines(100, 2100)))
+    const late = Array.from({ length: 50 }, (_, i) => line(3000 + i, { ts: NOON + (101 + i) * 1000 + 500 }))
+    steps.previous = 0
+    view.receive(late)
+    browser.settle()
+    assert.ok(steps.previous < 50 * 40, `${steps.previous} steps back for 50 lines`)
+    assert.deepEqual(rowIds(browser).slice(1, 5), [101, 3000, 102, 3001])
+  })
+
+  it('shows a line once when the stream sends one that the new page already has', () => {
+    const { browser, view } = setup(page(lines(1, 3)))
+    view.pause()
+    view.reset(page(lines(1, 10)), NO_FILTERS)
+    view.receive([line(9), line(10), line(11)])
+    browser.settle()
+    assert.deepEqual(rowIds(browser), lines(1, 11).map((each) => each.id))
+    assert.equal(view.latestId, 11)
+  })
+
+  it('starts over when more lines arrived during a reload than it holds, leaving a gap', () => {
+    const { browser, view } = setup(page(lines(1, 3)))
+    view.pause()
+    view.receive(lines(4, MAX_ROWS + 10))
+    view.reset(page(lines(1, 3)), NO_FILTERS)
+    browser.settle()
+    const ids = rowIds(browser)
+    assert.equal(ids[0], 11, 'the oldest lines held during the reload were dropped, so the view starts after the gap')
+    assert.equal(ids.at(-1), MAX_ROWS + 10)
+  })
+
   it('starts over at the newest lines when a background tab queued too many', () => {
     const { browser, view } = setup(page(lines(1, 5)))
     view.receive(lines(6, MAX_ROWS + 6))
@@ -242,6 +282,38 @@ describe('LogView order and size', () => {
 })
 
 describe('LogView older lines', () => {
+  it('goes on from where a search stopped reading, without waiting for a scroll, until it finds lines', async () => {
+    const searched: LogPage[] = [
+      { lines: [], hasMore: true, latestId: 200, nextBefore: 150 },
+      { lines: [line(40)], hasMore: false, latestId: 200 },
+    ]
+    const { browser, olderRequests } = setup({ lines: [], hasMore: true, latestId: 200, nextBefore: 180 }, {
+      filters: { ...NO_FILTERS, search: 'rare' },
+      loadOlder: () => Promise.resolve(searched.shift() ?? page([])),
+    })
+    await settlePromises()
+    await settlePromises()
+    assert.deepEqual(olderRequests, [180, 150])
+    assert.deepEqual(rowIds(browser), [40])
+    assert.equal(browser.status.textContent, 'Start of the stored log')
+  })
+
+  it('tries a failed load again from a click on the message, when there is nothing to scroll', async () => {
+    let fails = true
+    const { browser, olderRequests } = setup({ lines: [], hasMore: true, latestId: 200, nextBefore: 180 }, {
+      filters: { ...NO_FILTERS, search: 'rare' },
+      loadOlder: () => (fails ? Promise.reject(new Error('offline')) : Promise.resolve(page([line(40)]))),
+    })
+    await settlePromises()
+    assert.equal(browser.status.textContent, 'Could not load older lines. Scroll up or click here to try again.')
+    assert.ok(browser.status.classList.contains('retry'))
+    fails = false
+    browser.status.click()
+    await settlePromises()
+    assert.deepEqual(olderRequests, [180, 180])
+    assert.deepEqual(rowIds(browser), [40])
+  })
+
   it('loads them near the top, once at a time, and keeps the view in place', async () => {
     const older = Promise.withResolvers<LogPage>()
     const { browser, olderRequests } = setup(page(lines(100, 129), true), { loadOlder: () => older.promise })
@@ -319,7 +391,7 @@ describe('LogView older lines', () => {
     browser.scroller.scrollTop = 0
     browser.settle()
     await settlePromises()
-    assert.equal(browser.status.textContent, 'Could not load older lines. Scroll up to try again.')
+    assert.equal(browser.status.textContent, 'Could not load older lines. Scroll up or click here to try again.')
   })
 })
 
@@ -343,6 +415,24 @@ describe('LogView lines and filters', () => {
     view.reset(page(lines(1, 6)), NO_FILTERS)
     browser.settle()
     assert.deepEqual(rowIds(browser), [1, 2, 3, 4, 5, 6, 7])
+  })
+
+  it('says no lines match when only the instance filter is set', () => {
+    const { browser } = setup(page([]), { filters: { ...NO_FILTERS, instances: ['example-2'] } })
+    assert.equal(browser.status.textContent, 'No lines match these filters.')
+  })
+
+  it('marks the right letters when lowercasing changes the length of the text', () => {
+    const { browser } = setup(page([line(1, { message: 'İstanbul door' })]), { filters: { ...NO_FILTERS, search: 'door' } })
+    const row = browser.list.findAll('row')[0]!
+    assert.deepEqual(row.findAll('msg').flatMap((msg) => msg.children.map((mark) => mark.textContent)), ['door'])
+    assert.equal(row.findAll('msg')[0]?.textContent, 'İstanbul door')
+  })
+
+  it('narrows to Homebridge itself on a click on a core line\'s label', () => {
+    const { browser, picks } = setup(page([line(1, { plugin: null })]))
+    browser.list.findAll('plg')[0]!.click()
+    assert.deepEqual(picks, [{ plugin: CORE_PLUGIN }])
   })
 
   it('marks search matches and narrows the filters on a click', () => {

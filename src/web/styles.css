@@ -436,6 +436,7 @@ kbd {
   min-height: 30px;
 }
 .log-status[data-state="empty"] { padding-top: 22vh; font-size: 15px; }
+.log-status.retry { cursor: pointer; text-decoration: underline; text-underline-offset: 3px; }
 
 .log-lines { font: 13.5px/1.6 var(--mono); }
 
@@ -455,8 +456,8 @@ kbd {
 .row .t { color: var(--time); font-variant-numeric: tabular-nums; }
 .row .inst { color: var(--inst); overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
 .row .plg { color: var(--plugin); overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
-.row .plg.core { color: var(--faint); cursor: default; }
-.row .inst:hover, .row .plg:not(.core):hover { text-decoration: underline; text-underline-offset: 3px; }
+.row .plg.core { color: var(--faint); }
+.row .inst:hover, .row .plg:hover { text-decoration: underline; text-underline-offset: 3px; }
 .row .msg { overflow: hidden; text-overflow: ellipsis; }
 
 .log-lines.wrap .row .msg { white-space: pre-wrap; overflow-wrap: anywhere; }

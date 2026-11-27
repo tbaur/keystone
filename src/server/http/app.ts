@@ -10,23 +10,25 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 
 import type { Health, Overview } from '../../shared/types.ts'
 import type { LoginThrottle, Outcome } from '../auth/login-throttle.ts'
-import { hashPassword, verifyPassword } from '../auth/password.ts'
+import { hashPassword, MAX_PASSWORD_LENGTH, verifyPassword } from '../auth/password.ts'
 import { credentialOf, type Session, type SessionStore } from '../auth/sessions.ts'
 import type { Config } from '../config.ts'
+import { errorCode } from '../errors.ts'
 import { asRecord, asString } from '../json.ts'
 import type { Logger } from '../logger.ts'
 import { normalizeUsername } from '../secrets.ts'
 import type { LogStore } from '../store/log-store.ts'
 import {
-  BadRequest, clientAddress, isSameOrigin, parseCookies, readJson, redirect, sendError, sendJson, setSecurityHeaders,
+  BadRequest, clientAddress, hostName, isLoopbackHost, isSameOrigin, parseCookies, readJson, redirect, requestUrl, sendError, sendJson, setSecurityHeaders,
 } from './http-utils.ts'
 import { parseLogQuery, parseStreamStart } from './log-query.ts'
 import { sendAsset, type Asset } from './static-assets.ts'
 import type { StreamHub } from './stream-hub.ts'
 
 const SESSION_COOKIE = 'keystone_session'
-const MAX_PASSWORD_LENGTH = 1024
 const MAX_USERNAME_LENGTH = 64
+/** Errors that mean the client went away mid-request. They are not server faults. */
+const CLIENT_GONE = new Set(['ECONNRESET', 'ERR_STREAM_PREMATURE_CLOSE', 'ECONNABORTED'])
 
 export interface AppDeps {
   config: Config
@@ -78,12 +80,21 @@ async function handle(deps: AppDeps, req: IncomingMessage, res: ServerResponse):
   // The caller drops this promise. A throw here has to stay in the try, or the process exits.
   let path: string | undefined
   try {
-    const url = new URL(req.url ?? '/', 'http://dashboard.invalid')
+    if (!isAllowedHost(req, deps.config.allowedHosts)) {
+      sendError(res, 421, 'wrong_host', 'This server does not answer for that host name.')
+      return
+    }
+    const url = requestUrl(req)
     path = url.pathname
     await route({ deps, req, res, url })
   } catch (error) {
     if (error instanceof BadRequest) {
       sendError(res, 400, 'bad_request', error.message)
+      return
+    }
+    if (CLIENT_GONE.has(errorCode(error) ?? '')) {
+      deps.logger.debug('request ended by the client', { method: req.method, path })
+      res.destroy()
       return
     }
     const requestId = randomUUID()
@@ -94,6 +105,15 @@ async function handle(deps: AppDeps, req: IncomingMessage, res: ServerResponse):
       sendError(res, 500, 'internal', `Something went wrong (request ${requestId}). The server log has details.`)
     }
   }
+}
+
+/** With allowedHosts set, only those names and loopback may be in the Host header. */
+function isAllowedHost(req: IncomingMessage, allowed: readonly string[]): boolean {
+  if (allowed.length === 0) {
+    return true
+  }
+  const host = hostName(req.headers.host)
+  return host !== null && (allowed.includes(host) || isLoopbackHost(host))
 }
 
 async function route(ctx: Context): Promise<void> {
@@ -198,13 +218,20 @@ async function login({ deps, req, res }: Context): Promise<void> {
   const body = asRecord(await readJson(req))
   const typedName = asString(body?.username)
   const password = asString(body?.password)
-  if (!typedName || typedName.length > MAX_USERNAME_LENGTH || !password || password.length > MAX_PASSWORD_LENGTH) {
+  if (!typedName || !password) {
     throw new BadRequest('username and password are required')
+  }
+  if (typedName.length > MAX_USERNAME_LENGTH) {
+    throw new BadRequest(`username is longer than ${MAX_USERNAME_LENGTH} characters`)
+  }
+  if (password.length > MAX_PASSWORD_LENGTH) {
+    throw new BadRequest(`password is longer than ${MAX_PASSWORD_LENGTH} characters`)
   }
   const address = clientAddress(req, deps.config.trustProxy)
   const username = normalizeUsername(typedName)
   const hash = username && Object.hasOwn(deps.config.users, username) ? deps.config.users[username] : undefined
-  const reservation = deps.throttle.begin(address, hash ? username : null)
+  // Every valid name is throttled the same way, known or not, so a lock does not give away which names exist.
+  const reservation = deps.throttle.begin(address, username)
   if ('retryAfter' in reservation) {
     res.setHeader('retry-after', String(reservation.retryAfter))
     const message = reservation.reason === 'busy'
