@@ -67,6 +67,10 @@ export class LogView {
   private isWaiting = false
   /** The scroll position at the last scroll event, or after the view scrolled itself. Lower on the next event means the reader scrolled up. */
   private lastScrollTop = 0
+  /** Where the finger was at the last touch event, to tell which way it moves. */
+  private touchY: number | null = null
+  /** True while the reader holds the scrollbar. */
+  private isHoldingBar = false
   /** Plugin names seen in lines, for the plugin menu. */
   readonly plugins = new Set<string>()
 
@@ -75,6 +79,7 @@ export class LogView {
     this.el = options.elements
     this.filters = filters
     this.el.scroller.addEventListener('scroll', () => this.onScroll(), { passive: true })
+    this.listenForScrollUp()
     this.el.jump.addEventListener('click', () => this.jumpToLatest())
     this.el.list.addEventListener('click', (event) => this.onClick(event))
     // Fonts, wrapping and the cards can change the height after the last scroll,
@@ -382,6 +387,67 @@ export class LogView {
     }
   }
 
+  /**
+   * Browsers scroll on another thread and tell the page in a later scroll
+   * event. A batch of lines drawn before that event scrolls to the bottom
+   * again, which undoes the reader's scroll and hides that it happened. Input
+   * events come before the frame's drawing, so let go of the tail on the
+   * first wheel, swipe or key that moves up.
+   */
+  private listenForScrollUp(): void {
+    const s = this.el.scroller
+    s.addEventListener('wheel', (event) => {
+      if (event.deltaY < 0) {
+        this.letGo()
+      }
+    }, { passive: true })
+    s.addEventListener('touchstart', (event) => {
+      this.touchY = event.touches[0]?.clientY ?? null
+    }, { passive: true })
+    s.addEventListener('touchmove', (event) => {
+      const y = event.touches[0]?.clientY ?? null
+      // A finger moving down the screen scrolls the content up.
+      if (y !== null && this.touchY !== null && y > this.touchY) {
+        this.letGo()
+      }
+      this.touchY = y
+    }, { passive: true })
+    s.addEventListener('keydown', (event) => {
+      if (isScrollUpKey(event)) {
+        this.letGo()
+      }
+    })
+    // A press on the scroller itself, not a row, is on its scrollbar.
+    s.addEventListener('pointerdown', (event) => {
+      if (event.target === s) {
+        this.isHoldingBar = true
+        this.letGo()
+      }
+    })
+    window.addEventListener('pointerup', () => {
+      if (this.isHoldingBar) {
+        this.isHoldingBar = false
+        this.followIfAtBottom()
+      }
+    })
+  }
+
+  /** Stop following the tail, when there is anything above to read. */
+  private letGo(): void {
+    const s = this.el.scroller
+    if (this.isFollowing && !this.isDetached && s.scrollHeight > s.clientHeight) {
+      this.setFollowing(false)
+    }
+  }
+
+  /** Follow again when the view is still at the bottom, as after a press on the scrollbar that did not move it. */
+  private followIfAtBottom(): void {
+    const s = this.el.scroller
+    if (!this.isFollowing && !this.isDetached && s.scrollHeight - s.clientHeight - s.scrollTop < NEAR_BOTTOM_PX) {
+      this.setFollowing(true)
+    }
+  }
+
   private onClick(event: MouseEvent): void {
     const target = event.target as HTMLElement
     if (window.getSelection()?.toString()) {
@@ -430,6 +496,11 @@ export class LogView {
     if (this.rows === 0) return this.filters.search || this.filters.plugin || this.filters.level ? 'No lines match these filters.' : 'Waiting for log lines…'
     return this.hasMore ? '' : 'Start of the stored log'
   }
+}
+
+/** Keys that scroll a focused scroller up. */
+function isScrollUpKey(event: KeyboardEvent): boolean {
+  return event.key === 'ArrowUp' || event.key === 'PageUp' || event.key === 'Home' || (event.key === ' ' && event.shiftKey)
 }
 
 function keyOf(row: HTMLElement): LineKey {

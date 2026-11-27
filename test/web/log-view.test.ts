@@ -95,6 +95,74 @@ describe('LogView following the tail', () => {
     assert.equal(browser.jump.textContent, '2 new lines below')
   })
 
+  it('lets go on a wheel up before its scroll event arrives, so new lines do not pull the view back down', () => {
+    const { browser, view } = setup(page(lines(1, 30)))
+    browser.scroller.fire({ type: 'wheel', target: browser.scroller, deltaY: -5 })
+    view.receive([line(31)])
+    browser.settle()
+    assert.equal(rowIds(browser).at(-1), 30)
+    assert.equal(browser.jump.hidden, false)
+    assert.equal(browser.jump.textContent, '1 new line below')
+  })
+
+  it('lets go on a swipe down the screen and on keys that scroll up', () => {
+    const swipe = setup(page(lines(1, 30)))
+    swipe.browser.scroller.fire({ type: 'touchstart', target: swipe.browser.scroller, touches: [{ clientY: 100 }] })
+    swipe.browser.scroller.fire({ type: 'touchmove', target: swipe.browser.scroller, touches: [{ clientY: 110 }] })
+    swipe.view.receive([line(31)])
+    swipe.browser.settle()
+    assert.equal(rowIds(swipe.browser).at(-1), 30)
+
+    for (const key of [{ key: 'ArrowUp' }, { key: 'PageUp' }, { key: 'Home' }, { key: ' ', shiftKey: true }]) {
+      const { browser, view } = setup(page(lines(1, 30)))
+      browser.scroller.fire({ type: 'keydown', target: browser.scroller, shiftKey: false, ...key })
+      view.receive([line(31)])
+      browser.settle()
+      assert.equal(rowIds(browser).at(-1), 30, key.key)
+    }
+  })
+
+  it('keeps following on a wheel down, a swipe up the screen, or when nothing is above', () => {
+    const { browser, view } = setup(page(lines(1, 30)))
+    browser.scroller.fire({ type: 'wheel', target: browser.scroller, deltaY: 5 })
+    browser.scroller.fire({ type: 'touchstart', target: browser.scroller, touches: [{ clientY: 100 }] })
+    browser.scroller.fire({ type: 'touchmove', target: browser.scroller, touches: [{ clientY: 90 }] })
+    view.receive([line(31)])
+    browser.settle()
+    assert.equal(rowIds(browser).at(-1), 31)
+    assert.ok(browser.scroller.isAtBottom)
+
+    const short = setup(page(lines(1, 5)))
+    short.browser.scroller.fire({ type: 'wheel', target: short.browser.scroller, deltaY: -5 })
+    short.view.receive([line(6)])
+    short.browser.settle()
+    assert.equal(rowIds(short.browser).at(-1), 6)
+    assert.equal(short.browser.jump.hidden, true)
+  })
+
+  it('lets go while the scrollbar is held, and follows again when it is let go at the bottom', () => {
+    const { browser, view } = setup(page(lines(1, 30)))
+    browser.scroller.fire({ type: 'pointerdown', target: browser.scroller })
+    view.receive([line(31)])
+    browser.settle()
+    assert.equal(rowIds(browser).at(-1), 30)
+    browser.window.fire({ type: 'pointerup', target: browser.window })
+    browser.settle()
+    assert.equal(rowIds(browser).at(-1), 31)
+    assert.ok(browser.scroller.isAtBottom)
+    assert.equal(browser.jump.hidden, true)
+  })
+
+  it('keeps following on a press on a row', () => {
+    const { browser, view } = setup(page(lines(1, 30)))
+    const row = browser.list.findAll('row')[0]
+    assert.ok(row)
+    browser.scroller.fire({ type: 'pointerdown', target: row })
+    view.receive([line(31)])
+    browser.settle()
+    assert.equal(rowIds(browser).at(-1), 31)
+  })
+
   it('follows again back at the bottom, with the lines that arrived meanwhile', () => {
     const { browser, view } = setup(page(lines(1, 30)))
     browser.scroller.scrollBy(-100)
