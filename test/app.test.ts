@@ -7,8 +7,8 @@
 
 import assert from 'node:assert/strict'
 import { EventEmitter } from 'node:events'
-import { request as httpRequest, type IncomingMessage, type ServerResponse } from 'node:http'
-import { connect } from 'node:net'
+import { IncomingMessage, request as httpRequest, type ServerResponse } from 'node:http'
+import { connect, Socket } from 'node:net'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { describe, it } from 'node:test'
@@ -125,7 +125,9 @@ describe('dashboard HTTP', () => {
     const unknown = await login('wrong', { 'x-real-ip': '198.51.100.2' }, 'nosuch')
     assert.equal(known.status, 429)
     assert.equal(unknown.status, 429)
-    assert.deepEqual(await known.json(), await unknown.json())
+    // The wait counts down, so a second can pass between the two answers; compare them without it.
+    const answer = async (response: Response): Promise<string> => JSON.stringify(await response.json()).replace(/in \d+ seconds?/, 'in N seconds')
+    assert.equal(await answer(known), await answer(unknown))
   })
 
   it('answers only the allowed host names and loopback when allowedHosts is set', async (t) => {
@@ -376,12 +378,17 @@ class FakeResponse extends EventEmitter {
 }
 
 describe('request target', () => {
-  it('answers a target the URL parser rejects with a 400, and logs no error', () => {
+  it('answers a target the URL parser rejects with a 400, and logs no error', (t) => {
     const logger = memoryLogger()
     // Only the fields that the handler reads before routing.
     const handler = createHandler({ config: { cookieSecure: false, allowedHosts: [] }, logger } as unknown as AppDeps)
     const res = new FakeResponse()
-    handler({ url: 'http://[', method: 'GET', headers: {} } as IncomingMessage, res as unknown as ServerResponse)
+    const socket = new Socket()
+    t.after(() => socket.destroy())
+    const req = new IncomingMessage(socket)
+    req.url = 'http://['
+    req.method = 'GET'
+    handler(req, res as unknown as ServerResponse)
     assert.equal(res.status, 400)
     assert.equal(res.headers.get('x-content-type-options'), 'nosniff')
     assert.deepEqual(JSON.parse(res.body), { error: 'bad_request', message: 'the request target is not a valid URL' })
