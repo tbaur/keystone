@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.4](https://github.com/tbaur/keystone/compare/v1.0.3...v1.0.4) (2026-11-27)
+
+
+### Bug Fixes
+
+* keep the log in place when older lines load as you scroll up ([9a9a284](https://github.com/tbaur/keystone/commit/9a9a28453e43069018230b5e5d698cdcfc5ba73d))
+
 ## [1.0.3](https://github.com/tbaur/keystone/compare/v1.0.2...v1.0.3) (2026-11-27)
 
 
