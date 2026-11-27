@@ -1,5 +1,33 @@
 # Changelog
 
+## [1.1.0](https://github.com/tbaur/keystone/compare/v1.0.4...v1.1.0) (2026-11-27)
+
+
+### Features
+
+* add allowedHosts to refuse other host names (DNS rebinding) ([57bd48c](https://github.com/tbaur/keystone/commit/57bd48c939430a594f10726a38f236d07db80440))
+* filter the log to lines from Homebridge itself ([57bd48c](https://github.com/tbaur/keystone/commit/57bd48c939430a594f10726a38f236d07db80440))
+
+
+### Bug Fixes
+
+* answer a malformed request with 400, not a server error ([57bd48c](https://github.com/tbaur/keystone/commit/57bd48c939430a594f10726a38f236d07db80440))
+* drop a page of older lines that finishes after the log starts over ([57bd48c](https://github.com/tbaur/keystone/commit/57bd48c939430a594f10726a38f236d07db80440))
+* keep a page that stays open signed in past 30 days ([57bd48c](https://github.com/tbaur/keystone/commit/57bd48c939430a594f10726a38f236d07db80440))
+* keep line ids counting up after retention removes every line ([57bd48c](https://github.com/tbaur/keystone/commit/57bd48c939430a594f10726a38f236d07db80440))
+* keep the page working with a stale bookmark or a failed load ([57bd48c](https://github.com/tbaur/keystone/commit/57bd48c939430a594f10726a38f236d07db80440))
+* keep your place in the log when you turn wrapping on or off ([57bd48c](https://github.com/tbaur/keystone/commit/57bd48c939430a594f10726a38f236d07db80440))
+* let the service manager retry a database it cannot open ([57bd48c](https://github.com/tbaur/keystone/commit/57bd48c939430a594f10726a38f236d07db80440))
+* lock unknown user names like real ones and trust known addresses ([57bd48c](https://github.com/tbaur/keystone/commit/57bd48c939430a594f10726a38f236d07db80440))
+* log a lost log stream once and show how long it is down ([57bd48c](https://github.com/tbaur/keystone/commit/57bd48c939430a594f10726a38f236d07db80440))
+* read log times from every locale, calendar and clock change ([57bd48c](https://github.com/tbaur/keystone/commit/57bd48c939430a594f10726a38f236d07db80440))
+* say a config or secrets file is missing or unreadable ([57bd48c](https://github.com/tbaur/keystone/commit/57bd48c939430a594f10726a38f236d07db80440))
+* show a banner while new log lines cannot be saved ([57bd48c](https://github.com/tbaur/keystone/commit/57bd48c939430a594f10726a38f236d07db80440))
+* stop "Loading older lines…" staying on screen after the log reloads ([57bd48c](https://github.com/tbaur/keystone/commit/57bd48c939430a594f10726a38f236d07db80440))
+* stop a search or a prune from holding up the server ([57bd48c](https://github.com/tbaur/keystone/commit/57bd48c939430a594f10726a38f236d07db80440))
+* stop the log jumping a few lines after older lines load ([57bd48c](https://github.com/tbaur/keystone/commit/57bd48c939430a594f10726a38f236d07db80440))
+* warn about plain http to a host whose name starts with 127. ([57bd48c](https://github.com/tbaur/keystone/commit/57bd48c939430a594f10726a38f236d07db80440))
+
 ## [1.0.4](https://github.com/tbaur/keystone/compare/v1.0.3...v1.0.4) (2026-11-27)
 
 
