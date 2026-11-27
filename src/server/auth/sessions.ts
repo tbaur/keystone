@@ -8,6 +8,8 @@
 import { createHash, randomBytes } from 'node:crypto'
 import type { DatabaseSync, StatementSync } from 'node:sqlite'
 
+import { asNumber, asRecord, asString } from '../json.ts'
+
 const DAY_MS = 24 * 60 * 60 * 1000
 /** A tab that stays open keeps its session; one that is idle for 30 days signs in again. */
 export const SESSION_LIFETIME_MS = 30 * DAY_MS
@@ -92,12 +94,25 @@ export class SessionStore {
   }
 
   private live(hash: string, now: number): Row | null {
-    const row = this.select.get(hash) as Row | undefined
+    const row = readRow(this.select.get(hash))
     if (!row || row.expires_at <= now || row.created_at + SESSION_MAX_AGE_MS <= now) {
       return null
     }
     return row
   }
+}
+
+/** A sessions row, checked field by field, or null when there is none or it has the wrong shape. */
+function readRow(value: unknown): Row | null {
+  const row = asRecord(value)
+  const username = asString(row?.username)
+  const credential = asString(row?.credential)
+  const createdAt = asNumber(row?.created_at)
+  const expiresAt = asNumber(row?.expires_at)
+  if (username === null || credential === null || createdAt === null || expiresAt === null) {
+    return null
+  }
+  return { username, credential, created_at: createdAt, expires_at: expiresAt }
 }
 
 /** A short fingerprint of a user's password hash. A new password gives a new one, which ends the old sessions. */

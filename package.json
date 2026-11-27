@@ -9,7 +9,7 @@
     "node": ">=24"
   },
   "scripts": {
-    "build": "rm -rf dist && tsc -p tsconfig.build.json && tsc -p src/web/tsconfig.json && cp src/web/*.html src/web/*.css src/web/*.svg dist/web/",
+    "build": "rm -rf dist && tsc -p src/web/tsconfig.json && tsc -p tsconfig.build.json && cp src/web/*.html src/web/*.css src/web/*.svg dist/web/",
     "start": "node --disable-warning=ExperimentalWarning dist/server/main.js",
     "dev:fake": "node --disable-warning=ExperimentalWarning scripts/fake-homebridge.ts",
     "secrets": "node --disable-warning=ExperimentalWarning dist/server/cli/secrets.js",

@@ -138,6 +138,7 @@ async function main(): Promise<void> {
     users: { [USER]: await hashPassword(PASSWORD) },
     cookieSecure: false,
     trustProxy: false,
+    allowedHosts: ['localhost'],
     logLevel: 'info',
     instances: [
       { name: 'example-1', apiUrl: one.url, uiUrl: 'https://example-1.example.com', username: one.username, password: one.password },

@@ -7,7 +7,7 @@
 
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { chmodSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
+import { chmodSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { describe, it } from 'node:test'
 
@@ -114,6 +114,24 @@ describe('parseSettings', () => {
     assert.equal(parseSettings({ ...validSettings(), listen: { host: 'localhost' } }, context).listen.host, 'localhost')
   })
 
+  it('accepts config.example.json as it ships', () => {
+    const example: unknown = JSON.parse(readFileSync(join(import.meta.dirname, '..', 'config.example.json'), 'utf8'))
+    assert.deepEqual(parseSettings(example, context).allowedHosts, ['keystone.example.com'])
+  })
+
+  it('reads allowedHosts as lowercase names and addresses, and refuses anything with a scheme or port', () => {
+    assert.deepEqual(parseSettings(validSettings(), context).allowedHosts, [])
+    const hosts = parseSettings({ ...validSettings(), allowedHosts: ['Keystone.Example.com.', '192.0.2.10', '[2001:0db8:0::1]'] }, context).allowedHosts
+    assert.deepEqual(hosts, ['keystone.example.com', '192.0.2.10', '[2001:db8::1]'], 'in the form that a Host header is compared in')
+    assert.throws(() => parseSettings({ ...validSettings(), allowedHosts: ['https://keystone.example.com', 'host.test:8590'] }, context), (error: unknown) => {
+      assert.ok(error instanceof ConfigError)
+      assert.equal(error.problems.length, 2)
+      assert.match(error.problems[0] ?? '', /"https:\/\/keystone.example.com" is not one \(leave out the scheme and port\)/)
+      return true
+    })
+    assert.throws(() => parseSettings({ ...validSettings(), allowedHosts: 'keystone.example.com' }, context), /allowedHosts must be a list/)
+  })
+
   it('trusts X-Real-IP only when asked to', () => {
     assert.equal(parseSettings(validSettings(), context).trustProxy, false)
     assert.equal(parseSettings({ ...validSettings(), trustProxy: true }, context).trustProxy, true)
@@ -151,6 +169,28 @@ describe('loadConfig', () => {
     const { config, secrets } = configDir(t)
     writeFileSync(secrets, JSON.stringify({ users: { Example: HASH }, passwords: BOTH }), { mode: 0o600 })
     assert.throws(() => loadConfig(config), /user name "Example" is not valid/)
+  })
+
+  it('says a config file is missing, not that it is bad JSON', (t) => {
+    const { config } = configDir(t)
+    const missing = join(config, '..', 'nowhere.json')
+    assert.throws(() => loadConfig(missing), (error: unknown) => {
+      assert.ok(error instanceof ConfigError)
+      assert.deepEqual(error.problems, ['the file is missing; copy config.example.json there and edit it'])
+      return true
+    })
+    writeFileSync(config, '{ not json')
+    assert.throws(() => loadConfig(config), /not valid JSON/)
+  })
+
+  it('says a secrets file cannot be read, not that it is bad JSON', (t) => {
+    const { config, secrets } = configDir(t)
+    mkdirSync(secrets, { mode: 0o700 })
+    assert.throws(() => loadConfig(config), (error: unknown) => {
+      assert.ok(error instanceof SecretsError)
+      assert.deepEqual(error.problems, ['cannot read it (it is a directory)'])
+      return true
+    })
   })
 
   it('says how to create a missing secrets file', (t) => {
@@ -245,6 +285,9 @@ describe('npm run secrets', () => {
     const badName = run(config, 'not a name\nkeystone-test-password\none\ntwo\n')
     assert.equal(badName.status, 1)
     assert.match(String(badName.stderr), /not a valid user name/)
+    const long = run(config, `example\n${'p'.repeat(1025)}\none\ntwo\n`)
+    assert.equal(long.status, 1)
+    assert.match(String(long.stderr), /at most 1024 characters/)
     assert.throws(() => statSync(secrets))
   })
 })

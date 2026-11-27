@@ -17,6 +17,8 @@ const KEY_LENGTH = 32
 const SALT_LENGTH = 16
 const MAX_MEMORY = 64 * 1024 * 1024
 const HASH_PATTERN = /^scrypt\$(\d+)\$(\d+)\$(\d+)\$([\w-]{16,})\$([\w-]{32,})$/
+/** The longest password that sign-in accepts, so `npm run secrets` refuses longer ones too. */
+export const MAX_PASSWORD_LENGTH = 1024
 
 export async function hashPassword(password: string): Promise<string> {
   const salt = randomBytes(SALT_LENGTH)
@@ -34,7 +36,7 @@ export async function verifyPassword(password: string, encoded: string): Promise
   if (!match) {
     return false
   }
-  const [, n, r, p, salt, hash] = match as unknown as [string, string, string, string, string, string]
+  const [, n = '', r = '', p = '', salt = '', hash = ''] = match
   const expected = Buffer.from(hash, 'base64url')
   const actual = await derive(password, Buffer.from(salt, 'base64url'), { N: Number(n), r: Number(r), p: Number(p) }, expected.length)
   return timingSafeEqual(actual, expected)

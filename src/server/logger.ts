@@ -69,7 +69,7 @@ const MAX_CAUSES = 3
 function serializeError(error: Error, depth = 0): Fields {
   const out: Fields = { name: error.name, message: error.message }
   for (const key of ERROR_DETAILS) {
-    const value = (error as Partial<Record<typeof key, unknown>>)[key]
+    const value: unknown = Object.getOwnPropertyDescriptor(error, key)?.value
     if (typeof value === 'string' || typeof value === 'number') {
       out[key] = value
     }

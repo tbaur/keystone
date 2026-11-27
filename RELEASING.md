@@ -16,6 +16,8 @@ Keystone is not published to npm. A release is a git tag and a GitHub Release. P
    | `perf:` | `perf: use the search index for long queries` | patch |
    | `chore:`, `docs:`, `refactor:`, `style:`, `test:`, `ci:` | `docs: fix a typo` | no release |
 
+   Dependabot follows the same rule. An update of a runtime dependency, which ships to people who run Keystone, is titled `fix(deps):` and releases a patch, so a security fix in `socket.io-client` reaches them. An update of a development tool is titled `chore(deps):` and does not release.
+
 2. The **CI** and **CodeQL** workflows run.
 3. **release-please** opens or updates a **Release PR** titled `chore(main): release X.Y.Z`. It bumps the version in `package.json`, `package-lock.json`, `.release-please-manifest.json` and the page footer in `src/web/index.html`, and adds the new section to `CHANGELOG.md`. Several changes that land before a release go into the same Release PR.
 4. Merging the Release PR runs `release.yml` again. This time it creates the `vX.Y.Z` tag and publishes the GitHub Release.

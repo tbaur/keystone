@@ -8,7 +8,7 @@
 import type { LogLine, LogPage } from '../shared/types.ts'
 import { parseAnsi, stripAnsi } from './ansi.ts'
 import { h } from './dom.ts'
-import { matches, type Filters } from './filters.ts'
+import { CORE_PLUGIN, matches, type Filters } from './filters.ts'
 import { formatDay, formatFull, formatTime, plural } from './format.ts'
 import { dayNumber, HeldLines, inLogOrder, isBefore, type LineKey } from './log-order.ts'
 
@@ -50,6 +50,12 @@ export class LogView {
   private queue: LogLine[] = []
   /** Live lines that arrived during a reload, not yet filtered. */
   private waiting: LogLine[] = []
+  /** True when more lines arrived during a reload than `waiting` holds, so some were dropped. */
+  private hasDroppedWaiting = false
+  /** The newest line id that the view has: the page's newest at the last reset, or a newer live line. */
+  private newestId = 0
+  /** Where the next older page starts, when the last page said so (a search that read its whole budget). */
+  private olderCursor: number | null = null
   /** Live lines that arrived while the reader was scrolled up. */
   private readonly held = new HeldLines<LogLine>(MAX_ROWS)
   private frame = 0
@@ -78,12 +84,15 @@ export class LogView {
     this.options = options
     this.el = options.elements
     this.filters = filters
-    // prepend() keeps the view in place itself. Browser scroll anchoring would
-    // move it by the same height again, a page away from where the reader was.
-    this.el.scroller.style.overflowAnchor = 'none'
     this.el.scroller.addEventListener('scroll', () => this.onScroll(), { passive: true })
     this.listenForScrollUp()
     this.el.jump.addEventListener('click', () => this.jumpToLatest())
+    // With no rows above, a failed load cannot be retried by scrolling, so the message itself retries.
+    this.el.status.addEventListener('click', () => {
+      if (this.hasOlderFailed) {
+        void this.loadOlder()
+      }
+    })
     this.el.list.addEventListener('click', (event) => this.onClick(event))
     // Fonts, wrapping and the cards can change the height after the last scroll,
     // and a resize fires no scroll event, so stay at the bottom while following.
@@ -103,7 +112,12 @@ export class LogView {
    */
   reset(page: LogPage, filters: Filters): void {
     const waiting = this.waiting.filter((line) => line.id > page.latestId)
+    // Live lines carry every id in turn. If some were dropped and the first one kept does not follow the page, lines are missing.
+    const hasMissing = this.hasDroppedWaiting && (waiting[0]?.id ?? page.latestId + 1) > page.latestId + 1
     this.waiting = []
+    this.hasDroppedWaiting = false
+    this.newestId = page.latestId
+    this.olderCursor = page.nextBefore ?? null
     this.generation++
     this.filters = filters
     this.queue = []
@@ -123,9 +137,16 @@ export class LogView {
     this.notePlugins(page.lines)
     this.place(page.lines)
     this.receive(waiting)
+    this.hasGap ||= hasMissing
     this.flush()
     this.scrollToBottom()
     this.updateStatus()
+    this.continueOlder()
+  }
+
+  /** The newest line id that the view has, for a live stream to start after. */
+  get latestId(): number {
+    return this.newestId
   }
 
   /** Hold live lines while a new page loads, so none fall in the gap. */
@@ -133,14 +154,35 @@ export class LogView {
     this.isWaiting = true
   }
 
+  /** Stop holding live lines without a new page, as after a load that failed, and show the ones held. */
+  resume(): void {
+    if (!this.isWaiting) {
+      return
+    }
+    const waiting = this.waiting.filter((line) => line.id > this.newestId)
+    // Live lines carry every id in turn, so a first held line that does not follow the newest one means lines were dropped.
+    this.hasGap ||= this.hasDroppedWaiting && (waiting[0]?.id ?? this.newestId + 1) > this.newestId + 1
+    this.waiting = []
+    this.hasDroppedWaiting = false
+    this.isWaiting = false
+    this.receive(waiting)
+  }
+
   /** New lines from the stream. Lines that do not match the filters are skipped. */
   receive(lines: readonly LogLine[]): void {
     if (this.isWaiting) {
       this.waiting.push(...lines)
+      if (this.waiting.length > MAX_ROWS) {
+        this.waiting.splice(0, this.waiting.length - MAX_ROWS)
+        this.hasDroppedWaiting = true
+      }
       return
     }
-    this.notePlugins(lines)
-    this.queue.push(...lines.filter((line) => matches(line, this.filters)))
+    // A line the view already has, such as one the last page held that the stream also sent, is skipped.
+    const fresh = lines.filter((line) => line.id > this.newestId)
+    this.newestId = Math.max(this.newestId, ...fresh.map((line) => line.id))
+    this.notePlugins(fresh)
+    this.queue.push(...fresh.filter((line) => matches(line, this.filters)))
     // Browsers pause animation frames in background tabs, so a tab left open can
     // queue lines for hours. Keep only what one screen of history would show.
     if (this.queue.length > MAX_ROWS) {
@@ -216,17 +258,29 @@ export class LogView {
     }
   }
 
-  /** A line older than the newest row. When it is older than every row and older pages exist, it waits for those pages. */
+  /**
+   * A line older than the newest row, put before the first row that comes
+   * after it, found by halving. When it is older than every row and older
+   * pages exist, it waits for those pages. A line the list already has is
+   * skipped.
+   */
   private insertInPlace(line: LogLine): void {
-    let next: HTMLElement | null = lastRow(this.el.list)
-    while (next) {
-      const previous = previousRow(next)
-      if (!previous || isBefore(keyOf(previous), line)) {
-        break
+    const children = this.el.list.children
+    let low = 0
+    let high = children.length
+    while (low < high) {
+      const middle = Math.floor((low + high) / 2)
+      const row = rowFrom(children, middle)
+      // True from the first row after the line to the end, and past the last row.
+      if (!row || isBefore(line, keyOf(row))) {
+        high = middle
+      } else {
+        low = middle + 1
       }
-      next = previous
     }
-    if (!next || (this.hasMore && !previousRow(next))) {
+    const next = rowFrom(children, low)
+    const previous = next ? previousRow(next) : lastRow(this.el.list)
+    if (!next || (previous && keyOf(previous).id === line.id) || (this.hasMore && !previous)) {
       return
     }
     const row = this.row(line)
@@ -238,43 +292,67 @@ export class LogView {
 
   private async loadOlder(): Promise<void> {
     const first = firstRow(this.el.list)
-    if (this.isLoadingOlder || !this.hasMore || !first) {
+    const before = this.olderCursor ?? (first ? keyOf(first).id : null)
+    if (this.isLoadingOlder || !this.hasMore || before === null) {
       return
     }
     const generation = this.generation
     this.isLoadingOlder = true
     this.hasOlderFailed = false
     this.updateStatus()
+    let isLoaded = false
     try {
-      const page = await this.options.loadOlder(keyOf(first).id)
+      const page = await this.options.loadOlder(before)
       if (generation === this.generation) {
         this.prepend(page)
+        isLoaded = true
       }
     } catch {
-      this.hasOlderFailed = true
+      if (generation === this.generation) {
+        this.hasOlderFailed = true
+      }
     } finally {
       this.isLoadingOlder = false
-      if (generation === this.generation) {
-        this.updateStatus()
-      }
+      // Also after a reset, which drew its status while this page was still loading.
+      this.updateStatus()
+    }
+    if (isLoaded) {
+      this.continueOlder()
+    }
+  }
+
+  /** After a page that a search cut short, load on while the reader is near the top, so a short page never looks like the end. */
+  private continueOlder(): void {
+    if (this.olderCursor !== null && this.hasMore && this.el.scroller.scrollTop < NEAR_TOP_PX) {
+      void this.loadOlder()
     }
   }
 
   /** Lines were dropped from the queue, so the rows on screen no longer join up with the new ones. */
   private startOver(): void {
+    // An older page still loading belongs above the rows that are about to go.
+    this.generation++
     this.hasGap = false
     this.el.list.replaceChildren()
     this.rows = 0
     this.lastDay = 0
     this.hasMore = true
+    this.olderCursor = null
     this.isDetached = false
     this.held.clear()
     this.setFollowing(true)
   }
 
-  /** Insert older lines above, keeping what is on screen where it was. */
+  /**
+   * Insert older lines above, keeping what is on screen where it was. The view
+   * moves by however far the old first row moved. When the browser's scroll
+   * anchoring has already kept that row in place, it moved nowhere and the
+   * view does not move twice. Anchoring stays on because it also keeps the
+   * reader's place when rows above change height, as on a wrap toggle.
+   */
   private prepend(page: LogPage): void {
     this.hasMore = page.hasMore
+    this.olderCursor = page.nextBefore ?? null
     if (page.lines.length === 0) {
       return
     }
@@ -289,13 +367,16 @@ export class LogView {
       }
       fragment.append(this.row(line))
     }
-    const before = this.el.scroller.scrollHeight
+    const anchor = firstRow(this.el.list)
+    const anchorTop = anchor?.getBoundingClientRect().top ?? 0
     const top = this.el.list.firstElementChild
     if (top?.classList.contains('divider') && top.getAttribute('data-day') === String(day)) {
       top.remove()
     }
     this.el.list.prepend(fragment)
-    this.el.scroller.scrollTop += this.el.scroller.scrollHeight - before
+    if (anchor) {
+      this.el.scroller.scrollTop += anchor.getBoundingClientRect().top - anchorTop
+    }
     this.lastScrollTop = this.el.scroller.scrollTop
     this.rows += page.lines.length
     this.trimNewest()
@@ -315,6 +396,8 @@ export class LogView {
     const first = firstRow(list)
     if (hasTrimmed && first) {
       this.hasMore = true
+      // Older pages start again just before the new first row.
+      this.olderCursor = null
       if (!list.firstElementChild?.classList.contains('divider')) {
         first.before(divider(keyOf(first).ts))
       }
@@ -353,7 +436,7 @@ export class LogView {
     }
     const plugin = line.plugin
       ? h('span', { class: 'plg', title: `Show only ${line.plugin}` }, line.plugin)
-      : h('span', { class: 'plg core' }, 'Homebridge')
+      : h('span', { class: 'plg core', title: 'Show only Homebridge itself' }, 'Homebridge')
     const message = h('span', { class: 'msg' })
     for (const segment of parseAnsi(line.message)) {
       const span = segment.classes.length > 0 ? h('span', { class: segment.classes.join(' ') }) : message
@@ -459,8 +542,11 @@ export class LogView {
     const row = target.closest<HTMLElement>('.row')
     if (target.classList.contains('inst') && row?.dataset.instance) {
       this.options.onPick({ instance: row.dataset.instance })
-    } else if (target.classList.contains('plg') && row?.dataset.plugin) {
-      this.options.onPick({ plugin: row.dataset.plugin })
+    } else if (target.classList.contains('plg') && row) {
+      const plugin = row.dataset.plugin || (target.classList.contains('core') ? CORE_PLUGIN : '')
+      if (plugin) {
+        this.options.onPick({ plugin })
+      }
     }
   }
 
@@ -491,12 +577,13 @@ export class LogView {
     jump.textContent = this.unseen > 0 ? `${plural(this.unseen, 'new line')} below` : 'Back to latest'
     this.el.status.textContent = this.statusText()
     this.el.status.dataset.state = this.rows === 0 ? 'empty' : 'top'
+    this.el.status.classList.toggle('retry', this.hasOlderFailed)
   }
 
   private statusText(): string {
     if (this.isLoadingOlder) return 'Loading older lines…'
-    if (this.hasOlderFailed) return 'Could not load older lines. Scroll up to try again.'
-    if (this.rows === 0) return this.filters.search || this.filters.plugin || this.filters.level ? 'No lines match these filters.' : 'Waiting for log lines…'
+    if (this.hasOlderFailed) return 'Could not load older lines. Scroll up or click here to try again.'
+    if (this.rows === 0) return isAnyFilter(this.filters) ? 'No lines match these filters.' : 'Waiting for log lines…'
     return this.hasMore ? '' : 'Start of the stored log'
   }
 }
@@ -508,6 +595,21 @@ function isScrollUpKey(event: KeyboardEvent): boolean {
 
 function keyOf(row: HTMLElement): LineKey {
   return { ts: Number(row.dataset.ts), id: Number(row.dataset.id) }
+}
+
+function isAnyFilter(filters: Filters): boolean {
+  return filters.instances.length > 0 || filters.level !== '' || filters.plugin !== '' || filters.search !== ''
+}
+
+/** The row at `index` among the list's children, or the next row after it, since a divider may sit there. */
+function rowFrom(children: HTMLCollection, index: number): HTMLElement | null {
+  for (let at = index; at < children.length; at++) {
+    const element = children[at]
+    if (element?.classList.contains('row')) {
+      return element as HTMLElement
+    }
+  }
+  return null
 }
 
 function firstRow(list: HTMLElement): HTMLElement | null {
@@ -542,18 +644,43 @@ function fixDivider(row: HTMLElement): void {
   }
 }
 
-/** Wrap each case-insensitive match of `query` in <mark>. */
+/**
+ * Wrap each case-insensitive match of `query` in <mark>. The text is lowercased
+ * whole, as `matches()` does, so a word-final `Σ` becomes `ς`. Lowercasing can
+ * change the length of the text (`İ` becomes two characters), so each position
+ * in the lowercased text is mapped back to the character it came from.
+ */
 function appendHighlighted(parent: HTMLElement, text: string, query: string): void {
   const needle = query.trim().toLowerCase()
   if (!needle) {
     parent.append(text)
     return
   }
-  const lower = text.toLowerCase()
+  /** For each code unit of the lowercased text, where its character starts in `text`. One more entry marks the end. */
+  const origin: number[] = []
+  let perCharacter = ''
+  let at = 0
+  for (const char of text) {
+    const folded = char.toLowerCase()
+    for (let unit = 0; unit < folded.length; unit++) {
+      origin.push(at)
+    }
+    perCharacter += folded
+    at += char.length
+  }
+  origin.push(text.length)
+  // Lowercasing the whole text only changes letters by context, never lengths; keep the per-character form if it ever does.
+  const whole = text.toLowerCase()
+  const lower = whole.length === perCharacter.length ? whole : perCharacter
   let cursor = 0
-  for (let index = lower.indexOf(needle); index >= 0; index = lower.indexOf(needle, cursor)) {
-    parent.append(text.slice(cursor, index), h('mark', {}, text.slice(index, index + needle.length)))
-    cursor = index + needle.length
+  for (let index = lower.indexOf(needle); index >= 0; index = lower.indexOf(needle, index + needle.length)) {
+    const start = origin[index] ?? text.length
+    const end = origin[index + needle.length] ?? text.length
+    if (start < cursor) {
+      continue
+    }
+    parent.append(text.slice(cursor, start), h('mark', {}, text.slice(start, end)))
+    cursor = end
   }
   parent.append(text.slice(cursor))
 }

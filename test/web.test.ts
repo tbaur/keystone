@@ -10,10 +10,15 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, it } from 'node:test'
 
+import { MAX_PLUGIN as SERVER_MAX_PLUGIN, MAX_SEARCH as SERVER_MAX_SEARCH } from '../src/server/http/log-query.ts'
+import { openDatabase } from '../src/server/store/database.ts'
+import { CORE_PLUGIN as SERVER_CORE_PLUGIN, LogStore } from '../src/server/store/log-store.ts'
 import { searchQuery, searchText } from '../src/server/store/search.ts'
 import type { LogLine } from '../src/shared/types.ts'
 import { parseAnsi, stripAnsi } from '../src/web/ansi.ts'
-import { matches, NO_FILTERS, readFilters, toParams } from '../src/web/filters.ts'
+import {
+  CORE_PLUGIN, cutTo, MAX_PLUGIN, MAX_SEARCH, matches, NO_FILTERS, pluginMenu, readFilters, toParams, withKnownInstances,
+} from '../src/web/filters.ts'
 import { formatDuration, formatMbps } from '../src/web/format.ts'
 import { formatPluginVersion, formatVersion, hasPluginUpdate, hasUpdate, pluginsOutsideBridges } from '../src/web/plugins.ts'
 
@@ -54,6 +59,45 @@ describe('filters', () => {
     assert.ok(matches(line, { ...NO_FILTERS, search: 'BATTERY' }))
     assert.ok(!matches(line, { ...NO_FILTERS, search: '33m' }))
     assert.ok(!matches(line, { ...NO_FILTERS, plugin: 'Other' }))
+  })
+
+  it('use the same core plugin value and length limits as the server', () => {
+    assert.equal(CORE_PLUGIN, SERVER_CORE_PLUGIN)
+    assert.equal(MAX_SEARCH, SERVER_MAX_SEARCH)
+    assert.equal(MAX_PLUGIN, SERVER_MAX_PLUGIN)
+  })
+
+  it('cut a URL\'s search and plugin to what the server accepts, and drop instances that no longer exist', () => {
+    const read = readFilters(`?q=${'a'.repeat(300)}&plugin=${'p'.repeat(100)}&instance=example-1,example-9`)
+    assert.equal(read.search.length, MAX_SEARCH)
+    assert.equal(read.plugin.length, MAX_PLUGIN)
+    assert.deepEqual(withKnownInstances(read, ['example-1', 'example-2']).instances, ['example-1'])
+    const kept = { ...NO_FILTERS, instances: ['example-1'] }
+    assert.equal(withKnownInstances(kept, ['example-1']), kept, 'unchanged filters stay the same object')
+  })
+
+  it('cut a value without leaving half of an emoji', () => {
+    assert.equal(cutTo(`${'a'.repeat(199)}😀`, 200), 'a'.repeat(199))
+    assert.equal(cutTo('short', 200), 'short')
+  })
+
+  it('always offer all plugins and Homebridge itself in the plugin menu, even before any plugin is known', () => {
+    assert.deepEqual(pluginMenu([]), [['', 'All plugins'], [CORE_PLUGIN, 'Homebridge itself']])
+    assert.deepEqual(pluginMenu(['Lights', '', 'Camera', 'Lights', CORE_PLUGIN]).map(([value]) => value), ['', CORE_PLUGIN, 'Camera', 'Lights'])
+  })
+
+  it('find lines from Homebridge itself, live and stored, and not the dashboard\'s own lines', () => {
+    const store = new LogStore(openDatabase(':memory:'))
+    const base = { instance: 'example-1', ts: 1, receivedAt: 1, level: 'info' as const, messageOffset: 0 }
+    const stored = store.append([
+      { ...base, plugin: null, system: false, raw: 'core' },
+      { ...base, plugin: 'Example', system: false, raw: 'plugin' },
+      { ...base, plugin: null, system: true, raw: 'Log stream lost' },
+    ])
+    const onServer = store.page({ plugin: SERVER_CORE_PLUGIN }, 10).lines.map((each) => each.message)
+    const live = stored.filter((each) => matches(each, { ...NO_FILTERS, plugin: CORE_PLUGIN })).map((each) => each.message)
+    assert.deepEqual(onServer, ['core'])
+    assert.deepEqual(live, onServer)
   })
 
   it('search live lines exactly as the server searches stored ones', () => {

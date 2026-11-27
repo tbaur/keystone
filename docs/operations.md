@@ -29,7 +29,7 @@ sudo -u example npm ci
 sudo -u example npm run build
 ```
 
-Write `config.json` from `config.example.json`. It holds no secrets, so a deploy tool such as Ansible can write it. Behind nginx on the same host, set `"trustProxy": true`. Then write the secrets file as the service account:
+Write `config.json` from `config.example.json`. It holds no secrets, so a deploy tool such as Ansible can write it. Behind nginx on the same host, set `"trustProxy": true`. List the names that people use to reach Keystone in `allowedHosts`, such as `["keystone.example.com"]`. Then write the secrets file as the service account:
 
 ```bash
 sudo -u example npm run secrets
@@ -101,9 +101,9 @@ The process stops cleanly on `SIGTERM` or `SIGINT`. It stores the lines it has i
 | Exit code | Meaning |
 |---|---|
 | 0 | Stopped by a signal. |
-| 1 | A crash, a failed shutdown, a second signal, or a start-up failure such as a port already in use. |
+| 1 | A crash, a failed shutdown, a second signal, or a start-up failure that may clear on its own, such as a port already in use or a database that cannot be opened because the disk is full. The service manager tries again. |
 | 64 | A wrong command line. |
-| 78 | A bad config or secrets file, missing web files (run `npm run build`), or a database from a newer Keystone. |
+| 78 | A config or secrets file that is missing, unreadable or invalid, missing web files (run `npm run build`), or a database from a newer Keystone. |
 
 ## Put nginx in front
 
@@ -140,6 +140,8 @@ server {
 
 Keystone sends `X-Accel-Buffering: no` on the stream as well, and regular keep-alive comments. Set `trustProxy` to `true`, so that login throttling and the logs use the address from `X-Real-IP` and not the proxy's. Leave it off when nothing in front of Keystone sets that header, because any local process could then choose its own address.
 
+nginx passes the site's name in the `Host` header, so put that name in `allowedHosts`. Keystone then answers `421` to any other name. That stops a page on another site from reaching Keystone through DNS rebinding, where the other site points its own name at Keystone's address. Requests to `localhost` and loopback addresses, such as a health check on the same host, always work.
+
 ## Health checks
 
 `GET /healthz` needs no login. It answers 200 when every instance's API and log stream are connected and log lines are being stored, and 503 otherwise. Without a session, it gives only the status:
@@ -154,7 +156,7 @@ A signed-in browser also sees each part:
 {"status":"degraded","store":"ok","instances":{"example-1":{"api":"connected","logs":"connected"},"example-2":{"api":"unreachable","logs":"unreachable"}}}
 ```
 
-Point an uptime monitor at it. When it says 503, the page shows the reason on that instance's card, and the server log has the error. `HEAD /healthz` works too.
+Point an uptime monitor at it. When it says 503, the page shows the reason: on that instance's card, or in a banner when log lines cannot be saved. The server log has the error. `HEAD /healthz` works too.
 
 ## Logs
 
@@ -162,25 +164,37 @@ The server writes one JSON object per line to stdout, with `time`, `level` and `
 
 | Message | Meaning |
 |---|---|
-| `Homebridge UI unavailable` | Polling an instance failed. The card shows the same error. |
-| `log stream unavailable` | The log stream to an instance failed. `retryInMs` says when it tries again. |
+| `keystone listening`, `keystone stopped` | The server started, with the address and the number of instances, and stopped cleanly. |
+| `start failed` | The server could not start. The process exits with code 1 or 78; the table above says which problems are which. |
+| `allowedHosts is not set` | Any `Host` header is accepted, so DNS rebinding can reach Keystone. Set `allowedHosts`. |
+| `Homebridge UI unavailable` | Polling an instance failed. The card shows the same error. It is logged once per outage. |
+| `status poll failed` | Polling an instance failed in a way that Keystone did not expect. The error has the details. |
+| `log stream unavailable` | The log stream to an instance failed. `retryInMs` says when it tries again. It is logged once, and again when the error changes; the tries in between log `log stream still unavailable` at debug level. |
 | `plugins poll failed`, `accessories poll failed` | One kind of data could not be read. The card keeps the last data and shows the error. |
+| `log replay failed` | The lines that Homebridge UI replayed after a connect could not be compared with the stored ones, so none of them were stored. Live lines carry on. |
 | `log replay did not overlap the stored lines` | After a reconnect, none of the replayed lines matched what was stored, so all of them were stored. This is normal after a log rotation or a long outage. |
 | `could not store log lines` | Writing to the database failed. `lost` counts the lines lost since the first failure. `log lines stored again` follows when it recovers. |
 | `could not publish stored log lines` | Sending a stored batch to open browsers failed. The lines are in the database. `lines` is the size of that batch. |
+| `could not send the overview` | Building the instance overview for open browsers failed. They keep the last one and get the next change. |
+| `dropping a stream client that is not reading` | A browser let too much data pile up, for example a sleeping laptop. It reconnects and catches up, or reloads. |
 | `log lines dropped; more arrived at once than the pipeline holds` | A burst larger than the write buffer arrived at once. |
 | `login failed` | A wrong user name or password, with the client address. `user` is set only when the name is a real user, because people sometimes type a password into the name field. |
 | `apiUrl uses plain http to another host` | The Homebridge password crosses the network unencrypted. Use HTTPS for that `apiUrl`. |
-| `request failed` | An unexpected server error. The browser showed the same `requestId`. |
+| `request failed` | An unexpected server error. The browser showed the same `requestId`. A client that disconnects partway through a request is logged as `request ended by the client` at debug level instead. |
+| `maintenance failed` | The hourly clean-up of old lines and sessions failed. It runs again in an hour. |
+| `old log lines removed` | The hourly clean-up removed lines past `retentionDays` or past the line ceiling. The newest line always stays, so line ids keep counting up. |
+| `uncaught exception`, `unhandled rejection` | A bug. The process exits with code 1 so that the service manager restarts it. |
+| `stopping`, `stopping now, without waiting`, `shutdown failed` | A signal asked the server to stop. A second signal stops it at once, and a failed shutdown exits with code 1. |
 
-Set `KEYSTONE_LOG_LEVEL=debug` for more detail.
+Set `KEYSTONE_LOG_LEVEL=debug` for more detail, such as failed network stat reads (`network stats unavailable`) and log stream retries.
 
 ## Troubleshooting
 
 | What you see | Likely cause and fix |
 |---|---|
 | The server exits at start with `Invalid config` or `Invalid secrets` | The message lists every problem, including misspelt keys. Fix them and start again. |
-| `the file is missing` | The secrets file does not exist yet. Run `npm run secrets` as the service account. |
+| `the file is missing` | The config file or the secrets file does not exist yet. Copy `config.example.json`, or run `npm run secrets` as the service account. |
+| `cannot read it (permission denied)` | The service account cannot read that file. Give it read access; the secrets file stays mode 600 and owned by that account. |
 | `mode is 644; run chmod 600 on it` | The secrets file has group or other permissions. Run `chmod 600` on it. |
 | A card says **Sign-in failed** | The Homebridge user or password is wrong, or 2FA is on for it. Keystone waits between tries so that it never locks the account in Homebridge UI. Run `npm run secrets` with the right password, then restart for an immediate retry. |
 | A card says **Unreachable** | `apiUrl` is wrong, or that Homebridge UI is down. The card shows the last known data and how old it is. |
@@ -188,7 +202,9 @@ Set `KEYSTONE_LOG_LEVEL=debug` for more detail.
 | No batteries or accessory count | Homebridge is not running with `-I`. |
 | Log times are off by some hours | Keystone reads the host's time zone from Homebridge UI before each connection. Check the time zone of the Homebridge host. The `reading log times in the Homebridge host time zone` message shows the zone it uses. |
 | The login page returns to itself | The cookie is `Secure` and the page was loaded over plain HTTP. Use HTTPS, or set `cookieSecure: false` on a trusted LAN only. |
-| **Too many attempts** at login | Repeated failed sign-ins lock the address, and the lock grows with each further failure. Wait, or restart the service. |
+| **Too many attempts** at login | Repeated failed sign-ins lock the address, or the user name after failures from many addresses, and the lock grows with each further failure. An address that signed in as that user in the last 30 days is not held back by the user name's lock. Wait, or restart the service. |
+| A request answers **421**, *This server does not answer for that host name* | The name in the browser's address bar is not in `allowedHosts`. Add it, or reach Keystone by a name that is listed. |
+| A banner says **New log lines cannot be saved** | Writing to the database fails, for example because the disk is full. `could not store log lines` in the server log has the cause. The banner goes away once a write works again. |
 | The top bar keeps saying **Reconnecting…** | The proxy is buffering or closing the stream. Check the `/api/stream` block above. |
 
 ## Upgrades
@@ -214,7 +230,7 @@ npm run secrets -- --user <name>          # add a user, or change that user's pa
 npm run secrets -- --remove-user <name>   # remove a user; the last one cannot be removed
 ```
 
-User names are short, lowercase letters, digits, dots, dashes and underscores, and sign-in ignores their case. Changing a user's password ends that user's sessions after the restart. A removed user's sessions end at the restart too. Sessions renew while they are used, and end some time after sign-in in any case.
+User names are short, lowercase letters, digits, dots, dashes and underscores, and sign-in ignores their case. Passwords are 12 to 1024 characters. Changing a user's password ends that user's sessions after the restart. A removed user's sessions end at the restart too. Sessions renew while they are used, and an open page asks the server for news every few hours so that a wall display stays signed in. A session still ends a fixed time after sign-in, whatever happens.
 
 To sign out every browser, delete the sessions while the service is stopped:
 

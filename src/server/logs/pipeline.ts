@@ -13,6 +13,8 @@ export interface PipelineOptions {
   store: LogStore
   logger: Logger
   onStored: (lines: LogLine[]) => void
+  /** Called when writes start failing and when they work again. */
+  onFailingChange?: (isFailing: boolean) => void
   flushMs?: number
   maxPending?: number
   now?: () => number
@@ -80,6 +82,7 @@ export class LogPipeline {
     if (this.failure) {
       this.options.logger.info('log lines stored again', { lost: this.failure.lost })
       this.failure = null
+      this.options.onFailingChange?.(false)
     }
     try {
       this.options.onStored(stored)
@@ -92,6 +95,7 @@ export class LogPipeline {
     const now = this.now()
     if (!this.failure) {
       this.failure = { lost: 0, loggedAt: -Infinity }
+      this.options.onFailingChange?.(true)
     }
     this.failure.lost += lines
     if (now - this.failure.loggedAt >= FAILURE_LOG_MS) {

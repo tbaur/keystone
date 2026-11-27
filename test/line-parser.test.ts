@@ -93,6 +93,29 @@ describe('parseLine', () => {
     const line = parseLine('[Example] not a time', null, LOCAL)
     assert.equal(line.ts, null)
   })
+
+  it('keeps a bracketed name with a number in the message, instead of reading it as a date', () => {
+    for (const text of ['[Camera 2] stream started', '[Thermostat 1] set 21', '[Room 101] temp 21', '[Port 51826] up']) {
+      const line = parseLine(text, { plugin: 'Example', level: 'warn' }, LOCAL)
+      assert.equal(line.isEntry, false, text)
+      assert.equal(line.ts, null, text)
+      assert.equal(line.messageOffset, 0, text)
+      assert.equal(line.plugin, 'Example', text)
+    }
+  })
+
+  it('gives a continuation line its own level when it starts with a colour, else the level before it', () => {
+    const previous = { plugin: 'Example', level: 'info' as const }
+    assert.equal(parseLine('\u001b[31m    at Socket.emit (node:events:1:1)', previous, LOCAL).level, 'error')
+    assert.equal(parseLine('    at Socket.emit (node:events:1:1)', { ...previous, level: 'error' }, LOCAL).level, 'error')
+  })
+
+  it('marks a timestamp whose year no calendar can place as an entry with no time', () => {
+    const line = parseLine('[1/2/1900, 10:00:00] [Example] old', null, LOCAL)
+    assert.equal(line.isEntry, true)
+    assert.equal(line.ts, null)
+    assert.equal(line.plugin, 'Example')
+  })
 })
 
 describe('readStamp', () => {
@@ -135,6 +158,64 @@ describe('readStamp', () => {
     assert.equal(at('29.03.2026, 03:30:00', berlin), Date.UTC(2026, 2, 29, 1, 30), 'after the change, UTC+2')
     const kolkata = { reference: Date.UTC(2026, 9, 20), timeZone: 'Asia/Kolkata' }
     assert.equal(at('2026-10-20 05:30:00', kolkata), Date.UTC(2026, 9, 20, 0, 0))
+  })
+
+  it('reads the stamp of every kind of locale exactly, in the host time zone', () => {
+    // One locale for each shape: other digits, other calendars, day-period words before or after the time, time first, and words between.
+    const locales = [
+      'en-US', 'en-GB', 'de-DE', 'sv-SE', 'da-DK', 'fi-FI', 'ko-KR', 'zh-TW', 'zh-SG', 'ja-JP', 'bg-BG', 'ar-EG', 'fa-IR', 'ps-PK',
+      'th-TH', 'fr-CA', 'id-ID', 'vi-VN', 'el-GR', 'ms-MY', 'hu-HU', 'eu-ES', 'oc-FR', 'ee-GH', 'kok-IN', 'nds-DE', 'sq-AL', 'am-ET',
+    ]
+    const zones = ['UTC', 'America/New_York', 'Asia/Kolkata']
+    for (const zone of zones) {
+      for (const locale of locales) {
+        for (const instant of [Date.UTC(2026, 9, 21, 20, 5, 9), Date.UTC(2026, 9, 21, 8, 5, 9), Date.UTC(2026, 0, 1, 0, 0, 1)]) {
+          const text = new Date(instant).toLocaleString(locale, { timeZone: zone })
+          assert.equal(at(text, { reference: instant + 30_000, timeZone: zone }), instant, `${locale} ${zone} ${text}`)
+        }
+      }
+    }
+  })
+
+  it('reads year-day-month dates once a line has shown that order', () => {
+    const utc = { reference: Date.UTC(2026, 3, 3, 12), timeZone: 'UTC' }
+    const proof = readStamp(`[${new Date(Date.UTC(2026, 9, 21, 20)).toLocaleString('ug', { timeZone: 'UTC' })}] x`, utc)
+    assert.equal(proof?.order, 'ydm')
+    const ambiguous = new Date(Date.UTC(2026, 3, 3, 8)).toLocaleString('ug', { timeZone: 'UTC' })
+    assert.equal(at(ambiguous, { ...utc, order: 'ydm' }), Date.UTC(2026, 3, 3, 8))
+    assert.equal(at(ambiguous, utc), Date.UTC(2026, 2, 4, 8), 'year-month-day until the log shows otherwise')
+  })
+
+  it('reads ISO times, with an offset as given and without one in the host time zone', () => {
+    const newYork = { reference: Date.UTC(2026, 9, 21, 12), timeZone: 'America/New_York' }
+    assert.equal(at('2026-10-21T20:05:09.123Z', newYork), Date.UTC(2026, 9, 21, 20, 5, 9, 123))
+    assert.equal(at('2026-10-21T20:05:09+02:00', newYork), Date.UTC(2026, 9, 21, 18, 5, 9))
+    assert.equal(at('2026-10-21 20:05:09.123', newYork), Date.UTC(2026, 9, 22, 0, 5, 9, 123))
+  })
+
+  it('reads the stamps of toUTCString(), toString() and a trailing zone or offset', () => {
+    const denver = { reference: Date.UTC(2026, 9, 21, 18, 6), timeZone: 'America/Denver' }
+    const instant = Date.UTC(2026, 9, 21, 18, 5, 9)
+    assert.equal(at('Wed, 21 Oct 2026 18:05:09 GMT', denver), instant)
+    assert.equal(at('Wed Oct 21 2026 20:05:09 GMT+0200 (Central European Summer Time)', denver), instant)
+    assert.equal(at('2026-10-21 12:05:09 -0600', denver), instant)
+    assert.equal(at('2026-10-21 18:05:09 UTC', denver), instant)
+    assert.equal(at('10/21/2026, 6:05:09 PM GMT', denver), instant)
+  })
+
+  it('does not take a zone name for a word for half of the day', () => {
+    const denver = { reference: Date.UTC(2026, 9, 21, 14, 6), timeZone: 'America/Denver' }
+    // MDT holds sq's pm word `md`, and EAT holds to's `ea`; a zone name is read in the host's zone.
+    assert.equal(at('2026-10-21 08:05:09 MDT', denver), Date.UTC(2026, 9, 21, 14, 5, 9))
+    assert.equal(at('2026-10-21 08:05:09 EAT', denver), Date.UTC(2026, 9, 21, 14, 5, 9))
+    assert.equal(at('10/21/2026, 8:05:09 a.m. MDT', denver), Date.UTC(2026, 9, 21, 14, 5, 9))
+  })
+
+  it('reads the hour that happens twice when clocks go back as the one nearer the arrival', () => {
+    const first = { reference: Date.UTC(2026, 10, 1, 5, 30), timeZone: 'America/New_York' }
+    const second = { reference: Date.UTC(2026, 10, 1, 6, 30), timeZone: 'America/New_York' }
+    assert.equal(at('11/1/2026, 1:30:00 AM', first), Date.UTC(2026, 10, 1, 5, 30), 'daylight time, UTC-4')
+    assert.equal(at('11/1/2026, 1:30:00 AM', second), Date.UTC(2026, 10, 1, 6, 30), 'standard time, UTC-5')
   })
 
   it('knows a real zone name and nothing else', () => {

@@ -7,26 +7,44 @@
 
 import type { LogLine, LogPage, Overview } from '../shared/types.ts'
 import { toParams, type Filters } from './filters.ts'
+import { readLogLines, readLogPage, readOverview } from './validate.ts'
 
 const PAGE_SIZE = 400
 const TIMEOUT_MS = 15_000
 
-/** GET JSON from the dashboard. A 401 means the session ended, so the browser goes to the login page. */
-async function getJson<T>(path: string): Promise<T> {
+/** A request the server answered with an error. `status` tells a bad request (400) from a server that is struggling (5xx). */
+export class ApiError extends Error {
+  override name = 'ApiError'
+  readonly status: number
+
+  constructor(message: string, status: number) {
+    super(message)
+    this.status = status
+  }
+}
+
+/** The message of a thrown value, which need not be an Error. */
+export function messageOf(error: unknown): string {
+  return error instanceof Error ? error.message : String(error)
+}
+
+/** GET JSON from the dashboard and check its shape. A 401 means the session ended, so the browser goes to the login page. */
+async function getJson<T>(path: string, read: (value: unknown) => T): Promise<T> {
   const response = await fetch(path, { headers: { accept: 'application/json' }, signal: AbortSignal.timeout(TIMEOUT_MS) })
   if (response.status === 401) {
     window.location.assign('/login')
-    throw new Error('signed out')
+    throw new ApiError('signed out', 401)
   }
   if (!response.ok) {
-    const body = await response.json().catch(() => null) as { message?: string } | null
-    throw new Error(body?.message ?? `${path} answered ${response.status}`)
+    const body: unknown = await response.json().catch(() => null)
+    const message = typeof body === 'object' && body !== null && 'message' in body && typeof body.message === 'string' ? body.message : null
+    throw new ApiError(message ?? `${path} answered ${response.status}`, response.status)
   }
-  return response.json() as Promise<T>
+  return read(await response.json())
 }
 
 export function fetchOverview(): Promise<Overview> {
-  return getJson('/api/overview')
+  return getJson('/api/overview', readOverview)
 }
 
 export function fetchLogs(filters: Filters, beforeId?: number): Promise<LogPage> {
@@ -35,7 +53,7 @@ export function fetchLogs(filters: Filters, beforeId?: number): Promise<LogPage>
   if (beforeId !== undefined) {
     params.set('before', String(beforeId))
   }
-  return getJson(`/api/logs?${params.toString()}`)
+  return getJson(`/api/logs?${params.toString()}`, readLogPage)
 }
 
 /** End the session and go to the login page, even when the server cannot be reached. */
@@ -57,9 +75,13 @@ export interface StreamHandlers {
   /** The browser fell too far behind; start over. */
   onReset(): void
   onStatus(status: StreamStatus): void
+  /** An event that this page cannot read, such as one from a newer server. */
+  onBadEvent(error: unknown): void
 }
 
 const RESTART_MS = 5000
+/** A page reloads at most this often for events it cannot read, so a server that keeps sending them does not reload it over and over. */
+const BAD_EVENT_RELOAD_MS = 60_000
 
 /**
  * The live stream. EventSource reconnects by itself and sends Last-Event-ID,
@@ -71,6 +93,7 @@ export class LiveStream {
   private lastId: number
   private readonly handlers: StreamHandlers
   private restartTimer = 0
+  private badReloadAt = -Infinity
 
   constructor(afterId: number, handlers: StreamHandlers) {
     this.lastId = afterId
@@ -89,12 +112,21 @@ export class LiveStream {
     this.source = source
     source.addEventListener('open', () => this.handlers.onStatus('live'))
     source.addEventListener('logs', (event) => {
-      const lines = JSON.parse((event as MessageEvent<string>).data) as LogLine[]
-      this.lastId = lines.at(-1)?.id ?? this.lastId
-      this.handlers.onLines(lines)
+      const lines = this.read(event, readLogLines)
+      if (lines) {
+        this.lastId = lines.at(-1)?.id ?? this.lastId
+        this.handlers.onLines(lines)
+      } else if (Date.now() - this.badReloadAt >= BAD_EVENT_RELOAD_MS) {
+        // Lines that cannot be read leave a gap, so the page starts over from a fresh page.
+        this.badReloadAt = Date.now()
+        this.handlers.onReset()
+      }
     })
     source.addEventListener('overview', (event) => {
-      this.handlers.onOverview(JSON.parse((event as MessageEvent<string>).data) as Overview)
+      const overview = this.read(event, readOverview)
+      if (overview) {
+        this.handlers.onOverview(overview)
+      }
     })
     source.addEventListener('reset', () => this.handlers.onReset())
     source.addEventListener('error', () => {
@@ -105,11 +137,25 @@ export class LiveStream {
     })
   }
 
+  /** An event's data read with `read`, or null after telling the handlers that it could not be read. */
+  private read<T>(event: Event, read: (value: unknown) => T): T | null {
+    try {
+      if (!(event instanceof MessageEvent) || typeof event.data !== 'string') {
+        throw new TypeError(`the ${event.type} event has no text`)
+      }
+      return read(JSON.parse(event.data))
+    } catch (error) {
+      this.handlers.onBadEvent(error)
+      return null
+    }
+  }
+
   private async restart(): Promise<void> {
     this.close()
     try {
       await fetchOverview()
     } catch {
+      // Not reachable yet, or signed out (then the page is already going to the login page). Try again later.
       this.restartTimer = window.setTimeout(() => void this.restart(), RESTART_MS)
       return
     }

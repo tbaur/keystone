@@ -6,7 +6,6 @@
  */
 
 import { createServer, type Server } from 'node:http'
-import type { AddressInfo } from 'node:net'
 import { join } from 'node:path'
 import { setImmediate as yieldToEvents } from 'node:timers/promises'
 import type { DatabaseSync } from 'node:sqlite'
@@ -15,16 +14,18 @@ import { LoginThrottle } from './auth/login-throttle.ts'
 import { SessionStore } from './auth/sessions.ts'
 import type { Config } from './config.ts'
 import { Dashboard } from './dashboard.ts'
+import { errorMessage } from './errors.ts'
 import { HomebridgeApi } from './homebridge/api-client.ts'
 import { InstanceMonitor, type PollIntervals } from './homebridge/instance-monitor.ts'
 import { LogStream, type StreamTiming } from './homebridge/log-stream.ts'
 import { createHandler } from './http/app.ts'
+import { isLoopbackHost } from './http/http-utils.ts'
 import { loadAssets } from './http/static-assets.ts'
 import { StreamHub } from './http/stream-hub.ts'
 import type { Logger } from './logger.ts'
 import { LogPipeline } from './logs/pipeline.ts'
 import { REPLAY_COMPARE_LINES } from './logs/replay.ts'
-import { openDatabase } from './store/database.ts'
+import { openDatabase, SchemaError } from './store/database.ts'
 import { LogStore } from './store/log-store.ts'
 
 const DAY_MS = 24 * 60 * 60 * 1000
@@ -34,7 +35,6 @@ const MAX_STORED_LINES = 2_000_000
 /** Lines deleted per step of a prune, with a pause for other work after each step. */
 const PRUNE_BATCH = 10_000
 const SHUTDOWN_GRACE_MS = 5000
-const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]'])
 
 export interface StartOptions {
   webRoot?: string
@@ -55,12 +55,15 @@ export class SetupError extends Error {
 /** Open the database, start following every instance, and serve the dashboard. */
 export async function startDashboard(config: Config, logger: Logger, options: StartOptions = {}): Promise<RunningDashboard> {
   const assets = setup(() => loadAssets(options.webRoot ?? join(import.meta.dirname, '..', 'web')), 'the web files are missing; run npm run build')
-  const db = setup(() => openDatabase(config.dataDir), `cannot open the database in ${config.dataDir}`)
+  const db = openStore(config.dataDir)
   warnAboutPlainHttp(config, logger)
+  if (config.allowedHosts.length === 0) {
+    logger.warn('allowedHosts is not set, so a page on another site can reach Keystone by DNS rebinding; list the names people use to reach it')
+  }
   const store = new LogStore(db)
   const sessions = new SessionStore(db)
   const monitors: InstanceMonitor[] = []
-  const pipeline = new LogPipeline({ store, logger, onStored: (lines) => hub.publishLines(lines) })
+  const pipeline = new LogPipeline({ store, logger, onStored: (lines) => hub.publishLines(lines), onFailingChange: () => hub.overviewChanged() })
   const dashboard = new Dashboard({ monitors, store, isStoreFailing: () => pipeline.isFailing })
   const hub = new StreamHub({ store, logger, overview: () => dashboard.overview() })
 
@@ -82,7 +85,8 @@ export async function startDashboard(config: Config, logger: Logger, options: St
   await listen(server, config.listen.host, config.listen.port)
   monitors.forEach((monitor) => monitor.start())
   streams.forEach((stream) => stream.start())
-  const port = (server.address() as AddressInfo).port
+  const address = server.address()
+  const port = typeof address === 'object' && address !== null ? address.port : config.listen.port
   logger.info('keystone listening', { host: config.listen.host, port, instances: config.instances.length })
 
   const maintenance = new Maintenance({ store, sessions, logger, retentionDays: config.retentionDays })
@@ -110,15 +114,29 @@ function setup<T>(work: () => T, problem: string): T {
   try {
     return work()
   } catch (error) {
-    throw new SetupError(`${problem}: ${(error as Error).message}`, { cause: error })
+    throw new SetupError(`${problem}: ${errorMessage(error)}`, { cause: error })
+  }
+}
+
+/**
+ * Only a database from a newer Keystone is a setup problem. Anything else, such
+ * as a full disk or a lock held for a moment, may clear, so the process exits
+ * with a code that lets the service manager try again.
+ */
+function openStore(dataDir: string): DatabaseSync {
+  try {
+    return openDatabase(dataDir)
+  } catch (error) {
+    const message = `cannot open the database in ${dataDir}: ${errorMessage(error)}`
+    throw error instanceof SchemaError ? new SetupError(message, { cause: error }) : new Error(message, { cause: error })
   }
 }
 
 /** The Homebridge password goes to `apiUrl` at every login, so plain http should not leave the host. */
-function warnAboutPlainHttp(config: Config, logger: Logger): void {
+export function warnAboutPlainHttp(config: Pick<Config, 'instances'>, logger: Logger): void {
   for (const instance of config.instances) {
     const url = new URL(instance.apiUrl)
-    if (url.protocol === 'http:' && !LOOPBACK_HOSTS.has(url.hostname) && !url.hostname.startsWith('127.')) {
+    if (url.protocol === 'http:' && !isLoopbackHost(url.hostname)) {
       logger.warn('apiUrl uses plain http to another host, so the Homebridge password crosses the network unencrypted', {
         instance: instance.name,
       })
@@ -126,15 +144,18 @@ function warnAboutPlainHttp(config: Config, logger: Logger): void {
   }
 }
 
-interface MaintenanceDeps {
-  store: LogStore
-  sessions: SessionStore
+export interface MaintenanceDeps {
+  store: Pick<LogStore, 'capThreshold' | 'pruneBatch' | 'optimize'>
+  sessions: Pick<SessionStore, 'removeExpired'>
   logger: Logger
   retentionDays: number
+  /** For tests: the line ceiling and the batch size. */
+  maxStoredLines?: number
+  pruneBatch?: number
 }
 
 /** The hourly clean-up: old lines in small batches, so a large prune never stalls the server, then expired sessions. */
-class Maintenance {
+export class Maintenance {
   private readonly deps: MaintenanceDeps
   private running: Promise<void> | null = null
   private stopped = false
@@ -160,12 +181,15 @@ class Maintenance {
 
   private async work(): Promise<void> {
     const { store, sessions, logger, retentionDays } = this.deps
+    const batch = this.deps.pruneBatch ?? PRUNE_BATCH
     try {
       const cutoff = Date.now() - retentionDays * DAY_MS
+      // Worked out once per run: lines that arrive during the run stay for the next one.
+      const capId = store.capThreshold(this.deps.maxStoredLines ?? MAX_STORED_LINES)
       let removed = 0
-      let step = PRUNE_BATCH
-      while (step === PRUNE_BATCH && !this.stopped) {
-        step = store.pruneBatch(cutoff, MAX_STORED_LINES, PRUNE_BATCH)
+      let step = batch
+      while (step === batch && !this.stopped) {
+        step = store.pruneBatch(cutoff, capId, batch)
         removed += step
         await yieldToEvents()
       }

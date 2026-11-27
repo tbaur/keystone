@@ -9,6 +9,7 @@ import { parseArgs } from 'node:util'
 
 import { ConfigError, configPath, loadConfig, type Config } from './config.ts'
 import { SetupError, startDashboard } from './dashboard-server.ts'
+import { errorMessage } from './errors.ts'
 import { createLogger } from './logger.ts'
 import { SecretsError } from './secrets.ts'
 
@@ -22,7 +23,7 @@ function readArgs(): string | undefined {
   try {
     return parseArgs({ args: process.argv.slice(2), options: { config: { type: 'string' } } }).values.config
   } catch (error) {
-    process.stderr.write(`${(error as Error).message}\n${USAGE}\n`)
+    process.stderr.write(`${errorMessage(error)}\n${USAGE}\n`)
     process.exit(EXIT_USAGE)
   }
 }
@@ -33,7 +34,7 @@ function readConfig(): Config {
     return loadConfig(path, process.env)
   } catch (error) {
     const isKnown = error instanceof ConfigError || error instanceof SecretsError
-    const message = isKnown ? error.message : `Cannot read config ${path}: ${(error as Error).message}`
+    const message = isKnown ? error.message : `Cannot read config ${path}: ${errorMessage(error)}`
     process.stderr.write(`${message}\n`)
     process.exit(EXIT_CONFIG)
   }

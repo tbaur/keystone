@@ -4,14 +4,18 @@
  * Licensed under the Apache License, Version 2.0
  * See LICENSE file for full license text
  *
- * Just enough of a browser to run LogView in Node: elements, a scroller with
- * a fixed row height, animation frames and resize observers. A test moves
+ * Just enough of a browser to run LogView in Node: elements, a scroller whose
+ * rows are ROW_PX tall unless a test changes one, animation frames and resize
+ * observers. A test moves
  * time forward with frame(), which runs the steps in a browser's order:
  * scroll events, animation frames, layout, then resize observers.
  */
 
 export const ROW_PX = 20
 export const VIEW_PX = 400
+
+/** How many times code stepped from an element to the one before it, to check that a search does not walk the whole list. */
+export const steps = { previous: 0 }
 
 interface FakeEvent {
   type: string
@@ -49,6 +53,8 @@ export class FakeElement extends FakeNode {
   readonly tagName: string
   readonly nodes: FakeChild[] = []
   hidden = false
+  /** How tall this element is in the scroller. A test changes it to stand in for wrapping. */
+  heightPx = ROW_PX
   readonly dataset: Record<string, string | undefined>
   readonly classList = {
     contains: (name: string): boolean => this.classes().includes(name),
@@ -102,6 +108,7 @@ export class FakeElement extends FakeNode {
   }
 
   get previousElementSibling(): FakeElement | null {
+    steps.previous++
     const siblings = this.parent?.nodes ?? []
     return elementFrom(siblings, siblings.indexOf(this) - 1, -1)
   }
@@ -179,6 +186,13 @@ export class FakeElement extends FakeNode {
     return this.children.flatMap((child) => [...(child.classList.contains(name) ? [child] : []), ...child.findAll(name)])
   }
 
+  /** Only `top`, and only for a child of the scroller's list. Reading it runs layout, as in a browser. */
+  getBoundingClientRect(): { top: number } {
+    const scroller = this.parent?.parent
+    if (!(scroller instanceof FakeScroller)) throw new Error('The fake DOM measures only rows in the scroller')
+    return { top: scroller.viewTopOf(this) }
+  }
+
   addEventListener(type: string, listener: Listener): void {
     this.listeners.set(type, [...(this.listeners.get(type) ?? []), listener])
   }
@@ -215,7 +229,7 @@ class FakeFragment extends FakeElement {
   }
 }
 
-/** A scroll box whose content is one list, each child ROW_PX tall, shown VIEW_PX at a time. */
+/** A scroll box whose content is one list, each child `heightPx` tall, shown VIEW_PX at a time. */
 export class FakeScroller extends FakeElement {
   /** A browser fires one scroll event in the next frame after the position changes. */
   hasMoved = false
@@ -262,6 +276,12 @@ export class FakeScroller extends FakeElement {
     this.scrollTop = this.top + px
   }
 
+  /** Where `child` of the list starts, from the top of the view. */
+  viewTopOf(child: FakeElement): number {
+    this.keepAnchor()
+    return this.offsetOf(child) - this.top
+  }
+
   /** Layout: anchoring first, then when the content gets shorter, the position comes in with it. */
   layout(): void {
     this.keepAnchor()
@@ -269,7 +289,16 @@ export class FakeScroller extends FakeElement {
   }
 
   private contentHeight(): number {
-    return Math.max(VIEW_PX, this.content.children.length * ROW_PX)
+    return Math.max(VIEW_PX, this.content.children.reduce((sum, child) => sum + child.heightPx, 0))
+  }
+
+  private offsetOf(child: FakeElement): number {
+    let offset = 0
+    for (const each of this.content.children) {
+      if (each === child) return offset
+      offset += each.heightPx
+    }
+    throw new Error('The element is not in the list')
   }
 
   private moveTo(value: number): void {
@@ -281,17 +310,24 @@ export class FakeScroller extends FakeElement {
   }
 
   private pickAnchor(): void {
-    const index = Math.floor(this.top / ROW_PX)
-    this.anchor = this.content.children[index] ?? null
-    this.anchorOffset = this.top - index * ROW_PX
+    let offset = 0
+    this.anchor = null
+    for (const child of this.content.children) {
+      if (offset + child.heightPx > this.top) {
+        this.anchor = child
+        this.anchorOffset = this.top - offset
+        return
+      }
+      offset += child.heightPx
+    }
   }
 
-  /** Scroll anchoring: rows added or removed above the anchor row move the position with it. Browsers skip it at the very top. */
+  /** Scroll anchoring: rows added, removed or resized above the anchor row move the position with it. Browsers skip it at the very top. */
   private keepAnchor(): void {
     if (this.style.overflowAnchor === 'none' || this.top === 0 || this.anchor?.parent !== this.content) {
       return
     }
-    this.moveTo(this.content.children.indexOf(this.anchor) * ROW_PX + this.anchorOffset)
+    this.moveTo(this.offsetOf(this.anchor) + this.anchorOffset)
     this.pickAnchor()
   }
 }
@@ -317,6 +353,7 @@ export class FakeBrowser {
     Object.assign(globalThis, {
       document: {
         createElement: (tag: string) => new FakeElement(tag),
+        createElementNS: (_namespace: string, tag: string) => new FakeElement(tag),
         createTextNode: (text: string) => new FakeText(text),
         createDocumentFragment: () => new FakeFragment(),
       },
@@ -330,6 +367,8 @@ export class FakeBrowser {
         return id
       },
       cancelAnimationFrame: (id: number) => frames.delete(id),
+      // So `instanceof HTMLElement` holds for the fake elements.
+      HTMLElement: FakeElement,
       ResizeObserver: class {
         constructor(callback: () => void) {
           observers.push(callback)

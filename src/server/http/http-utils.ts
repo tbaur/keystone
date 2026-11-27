@@ -6,7 +6,9 @@
  */
 
 import type { IncomingMessage, ServerResponse } from 'node:http'
-import { isIP } from 'node:net'
+import { isIP, isIPv4 } from 'node:net'
+
+import { errorCode } from '../errors.ts'
 
 const MAX_BODY_BYTES = 4096
 
@@ -46,6 +48,42 @@ export class BadRequest extends Error {
   override name = 'BadRequest'
 }
 
+/** The request's URL. A target that is not a valid URL, such as `http://[`, is a BadRequest. */
+export function requestUrl(req: IncomingMessage): URL {
+  try {
+    return new URL(req.url ?? '/', 'http://dashboard.invalid')
+  } catch (error) {
+    if (errorCode(error) === 'ERR_INVALID_URL') {
+      throw new BadRequest('the request target is not a valid URL')
+    }
+    throw error
+  }
+}
+
+/**
+ * The host name in a Host header, lowercased, without the port or a trailing
+ * dot, and with an IPv6 address shortened and in brackets. Null when there is none.
+ */
+export function hostName(header: string | undefined): string | null {
+  if (!header) {
+    return null
+  }
+  try {
+    return new URL(`http://${header}`).hostname.toLowerCase().replace(/\.$/, '') || null
+  } catch (error) {
+    if (errorCode(error) === 'ERR_INVALID_URL') {
+      return null
+    }
+    throw error
+  }
+}
+
+/** True for a host name that always means this machine: localhost, 127.0.0.0/8 or ::1. A name such as 127.example.net is not. */
+export function isLoopbackHost(hostname: string): boolean {
+  const host = hostname.toLowerCase()
+  return host === 'localhost' || host === '[::1]' || host === '::1' || (isIPv4(host) && host.startsWith('127.'))
+}
+
 /** Read a small JSON body. Larger or non-JSON bodies are a BadRequest. */
 export async function readJson(req: IncomingMessage): Promise<unknown> {
   if (!(req.headers['content-type'] ?? '').startsWith('application/json')) {
@@ -53,7 +91,8 @@ export async function readJson(req: IncomingMessage): Promise<unknown> {
   }
   const chunks: Buffer[] = []
   let size = 0
-  for await (const chunk of req as AsyncIterable<Buffer>) {
+  for await (const piece of req) {
+    const chunk = Buffer.isBuffer(piece) ? piece : Buffer.from(String(piece))
     size += chunk.length
     if (size > MAX_BODY_BYTES) {
       throw new BadRequest('body too large')

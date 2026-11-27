@@ -5,10 +5,11 @@
  * See LICENSE file for full license text
  */
 
-import { closeSync, fsyncSync, openSync, readFileSync, renameSync, rmSync, statSync, writeSync } from 'node:fs'
+import { closeSync, fsyncSync, openSync, renameSync, rmSync, statSync, writeSync } from 'node:fs'
 import { dirname } from 'node:path'
 
 import { isPasswordHash } from './auth/password.ts'
+import { errorCode, readJsonFile } from './errors.ts'
 import { asRecord } from './json.ts'
 
 /** What secrets.json holds. Written by `npm run secrets`, never by hand. */
@@ -48,7 +49,7 @@ export function readSecretsFile(path: string): Secrets | null {
   try {
     mode = statSync(path).mode & 0o777
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+    if (errorCode(error) === 'ENOENT') {
       return null
     }
     throw error
@@ -56,13 +57,11 @@ export function readSecretsFile(path: string): Secrets | null {
   if ((mode & 0o077) !== 0) {
     throw new SecretsError(path, [`mode is ${mode.toString(8)}; run chmod 600 on it`])
   }
-  let raw: unknown
-  try {
-    raw = JSON.parse(readFileSync(path, 'utf8'))
-  } catch (error) {
-    throw new SecretsError(path, [`not valid JSON: ${(error as Error).message}`])
+  const file = readJsonFile(path)
+  if ('problem' in file) {
+    throw new SecretsError(path, [file.problem])
   }
-  const root = asRecord(raw) ?? {}
+  const root = asRecord(file.value) ?? {}
   return { users: nonEmptyStrings(root.users), passwords: nonEmptyStrings(root.passwords) }
 }
 

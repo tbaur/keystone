@@ -64,6 +64,31 @@ describe('HomebridgeApi', () => {
     })
   })
 
+  it('reports a body that stops arriving as unreachable, not as bad JSON', async () => {
+    const stalled = (): Response => new Response(new ReadableStream({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode('{"total":'))
+        controller.error(Object.assign(new Error('timed out'), { name: 'TimeoutError' }))
+      },
+    }), { status: 200 })
+    const broken = (): Response => new Response(new ReadableStream({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode('{"total":'))
+        controller.error(new TypeError('terminated'))
+      },
+    }), { status: 200 })
+    for (const [body, message] of [[stalled, 'no answer within 50 ms'], [broken, '/accessories broke off its answer']] as const) {
+      const { fetch } = fakeFetch((url) => (url.endsWith('/auth/login') ? loginOk('t1') : body()))
+      const api = new HomebridgeApi({ baseUrl: 'http://127.0.0.1:8581', username: 'example', password: 'test-password', fetch, timeoutMs: 50 })
+      await assert.rejects(api.get('/accessories'), (error: unknown) => {
+        assert.ok(error instanceof HomebridgeApiError)
+        assert.equal(error.kind, 'unreachable')
+        assert.equal(error.message, message)
+        return true
+      })
+    }
+  })
+
   it('shares one login between calls that start together', async () => {
     const { fetch, calls } = fakeFetch((url) => (url.endsWith('/auth/login') ? loginOk('t1') : json(200, {})))
     const api = new HomebridgeApi({ baseUrl: 'http://127.0.0.1:8581', username: 'example', password: 'test-password', fetch })

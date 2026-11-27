@@ -6,15 +6,19 @@
  */
 
 import type { LogLevel } from '../../shared/types.ts'
-import { readStamp, type StampContext } from './timestamp.ts'
+import { readStamp, type DateOrder, type StampContext } from './timestamp.ts'
 
 export interface ParsedLine {
   /** The line as Homebridge wrote it, ANSI codes included. */
   raw: string
   /** The line without ANSI codes. */
   plain: string
-  /** Epoch ms from Homebridge's timestamp, or null when the line has none. */
+  /** True when the line starts with a timestamp, so it starts a new entry rather than continuing the one before. */
+  isEntry: boolean
+  /** Epoch ms from Homebridge's timestamp, or null when the line has none or its date cannot be placed. */
   ts: number | null
+  /** The date order, when this line's timestamp proved it. */
+  dateOrder: DateOrder | null
   plugin: string | null
   level: LogLevel
   /** Where the message starts in `raw`, after the timestamp and plugin prefix. */
@@ -79,13 +83,17 @@ export class LineSplitter {
  * Parse a Homebridge log line: `[time] [Plugin] message`. Homebridge colours the
  * message by level (red error, yellow warning, grey debug), so the level comes
  * from that colour. A line with no timestamp continues the line before it, such
- * as a stack trace, so it takes that line's plugin and level from `previous`.
+ * as a stack trace, so it takes that line's plugin from `previous`, and its
+ * level too unless it starts with a colour of its own.
  */
 export function parseLine(raw: string, previous: LineContext | null, stamp: StampContext): ParsedLine {
   const { plain, rawEnd } = stripAnsi(raw)
   const time = readStamp(plain, stamp)
   if (!time) {
-    return { raw, plain, ts: null, plugin: previous?.plugin ?? null, level: previous?.level ?? 'info', messageOffset: 0 }
+    return {
+      raw, plain, isEntry: false, ts: null, dateOrder: null,
+      plugin: previous?.plugin ?? null, level: colourLevel(raw, 0) ?? previous?.level ?? 'info', messageOffset: 0,
+    }
   }
   let prefixLength = time.length
   const plugin = PLUGIN.exec(plain.slice(prefixLength))
@@ -96,9 +104,11 @@ export function parseLine(raw: string, previous: LineContext | null, stamp: Stam
   return {
     raw,
     plain,
+    isEntry: true,
     ts: time.ts,
+    dateOrder: time.order,
     plugin: plugin?.[1] ?? null,
-    level: levelAt(raw, messageOffset),
+    level: colourLevel(raw, messageOffset) ?? 'info',
     messageOffset,
   }
 }
@@ -136,9 +146,9 @@ function stripAnsi(raw: string): { plain: string, rawEnd: (plainIndex: number) =
   return { plain, rawEnd }
 }
 
-/** The level from the colour codes that come just before the first visible character of the message. */
-function levelAt(raw: string, offset: number): LogLevel {
-  let level: LogLevel = 'info'
+/** The level from the colour codes that come just before the first visible character of the message, or null when there are none. */
+function colourLevel(raw: string, offset: number): LogLevel | null {
+  let level: LogLevel | null = null
   let cursor = 0
   const message = raw.slice(offset)
   for (const match of message.matchAll(ESCAPES)) {
@@ -146,8 +156,10 @@ function levelAt(raw: string, offset: number): LogLevel {
       break
     }
     cursor += match[0].length
-    const codes = (SGR.exec(match[0])?.[1] ?? '').split(';').map(Number)
-    level = codes.reduce(levelAfterCode, level)
+    const sgr = SGR.exec(match[0])
+    if (sgr) {
+      level = (sgr[1] ?? '').split(';').map(Number).reduce(levelAfterCode, level ?? 'info')
+    }
   }
   return level
 }

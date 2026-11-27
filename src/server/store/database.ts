@@ -9,6 +9,7 @@ import { chmodSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 
+import { asNumber, asRecord } from '../json.ts'
 import { searchText } from './search.ts'
 
 const DATABASE_FILE = 'dashboard.sqlite'
@@ -68,6 +69,11 @@ const MIGRATIONS: readonly string[] = [
 
 export const SCHEMA_VERSION = MIGRATIONS.length
 
+/** The database was written by a newer Keystone. Restarting will not help; upgrading will. */
+export class SchemaError extends Error {
+  override name = 'SchemaError'
+}
+
 /**
  * Open (or create) the database in `dataDir` and bring its schema up to date.
  * The directory is made private, since it holds logs and session hashes. Pass
@@ -91,10 +97,9 @@ export function openDatabase(dataDir: string): DatabaseSync {
 }
 
 function migrate(db: DatabaseSync): void {
-  const row = db.prepare('PRAGMA user_version').get() as { user_version: number } | undefined
-  const current = row?.user_version ?? 0
+  const current = asNumber(asRecord(db.prepare('PRAGMA user_version').get())?.user_version) ?? 0
   if (current > MIGRATIONS.length) {
-    throw new Error(`database schema ${current} is newer than this build (${MIGRATIONS.length}); upgrade Keystone`)
+    throw new SchemaError(`database schema ${current} is newer than this build (${MIGRATIONS.length}); upgrade Keystone`)
   }
   for (let version = current; version < MIGRATIONS.length; version++) {
     transaction(db, () => {

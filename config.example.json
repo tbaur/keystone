@@ -5,6 +5,7 @@
   "retentionDays": 7,
   "cookieSecure": true,
   "trustProxy": false,
+  "allowedHosts": ["keystone.example.com"],
   "logLevel": "info",
   "instances": [
     {

@@ -82,7 +82,7 @@ export class InstanceMonitor {
 
   setLogsState(state: ConnectionState, error: string | null): void {
     if (state !== this.logs.state || error !== this.logs.error) {
-      this.logs = connection(state, error)
+      this.logs = connection(state, error, this.logs)
       this.changed()
     }
   }
@@ -113,7 +113,10 @@ export class InstanceMonitor {
       api.get('/status/ram'),
       api.get('/status/uptime'),
       // Optional: a host where Homebridge UI cannot read network stats still counts as connected.
-      api.get('/status/network').catch(() => null),
+      api.get('/status/network').catch((error: unknown) => {
+        this.options.logger.debug('network stats unavailable', { error })
+        return null
+      }),
     ])
     this.status = mapHomebridgeStatus(status)
     this.childBridges = mapChildBridges(bridges)
@@ -186,7 +189,7 @@ export class InstanceMonitor {
 
   private setApiState(state: ConnectionState, error: string | null): void {
     if (state !== this.api.state || error !== this.api.error) {
-      this.api = connection(state, error)
+      this.api = connection(state, error, this.api)
     }
   }
 
@@ -200,6 +203,7 @@ export class InstanceMonitor {
   }
 }
 
-function connection(state: ConnectionState, error: string | null = null): Connection {
-  return { state, since: Date.now(), error }
+/** A new connection state. While the state stays the same and only its error changes, `since` keeps the start of that state. */
+function connection(state: ConnectionState, error: string | null = null, previous?: Connection): Connection {
+  return { state, since: previous?.state === state ? previous.since : Date.now(), error }
 }

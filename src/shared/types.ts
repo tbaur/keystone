@@ -29,10 +29,16 @@ export interface LogLine {
 
 export interface LogPage {
   lines: LogLine[]
-  /** True when older lines that match the same filter exist. */
+  /** True when older lines that match the same filter may exist. */
   hasMore: boolean
   /** The newest stored line of any instance. A live stream starts after it. */
   latestId: number
+  /**
+   * Set when a search read as many lines as one request may before it found a
+   * full page: ask for the next page before this id, not before the first
+   * line, which may be far newer or missing.
+   */
+  nextBefore?: number
 }
 
 export type ConnectionState = 'connecting' | 'connected' | 'unreachable' | 'unauthorized'
@@ -127,6 +133,8 @@ export interface Overview {
   instances: InstanceSnapshot[]
   /** Errors and warnings per instance and plugin over the last 24 hours. */
   logCounts: LogCount[]
+  /** 'failing' while new log lines cannot be written to the database. */
+  store: 'ok' | 'failing'
 }
 
 export interface Health {

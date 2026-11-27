@@ -43,6 +43,8 @@ export class StreamHub {
   private readonly clients = new Map<ServerResponse, StillAllowed>()
   private readonly heartbeat: NodeJS.Timeout
   private overviewTimer: NodeJS.Timeout | null = null
+  /** Set by close(). A browser that reconnects during shutdown is turned away, or it would hold the server open. */
+  private isClosed = false
 
   constructor(options: HubOptions) {
     this.options = options
@@ -54,6 +56,11 @@ export class StreamHub {
 
   /** Start a stream. `afterId` is the last line the client has. */
   open(res: ServerResponse, afterId: number | null, isAllowed: StillAllowed): void {
+    if (this.isClosed) {
+      res.writeHead(503, { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-store', connection: 'close', 'retry-after': '5' })
+      res.end('Keystone is stopping.')
+      return
+    }
     res.writeHead(200, {
       'content-type': 'text/event-stream; charset=utf-8',
       'cache-control': 'no-store',
@@ -108,6 +115,7 @@ export class StreamHub {
   }
 
   close(): void {
+    this.isClosed = true
     clearInterval(this.heartbeat)
     if (this.overviewTimer) {
       clearTimeout(this.overviewTimer)

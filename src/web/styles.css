@@ -436,6 +436,7 @@ kbd {
   min-height: 30px;
 }
 .log-status[data-state="empty"] { padding-top: 22vh; font-size: 15px; }
+.log-status.retry { cursor: pointer; text-decoration: underline; text-underline-offset: 3px; }
 
 .log-lines { font: 13.5px/1.6 var(--mono); }
 
@@ -446,19 +447,22 @@ kbd {
   padding: 0 16px 0 14px;
   border-left: 2px solid var(--inst);
   white-space: pre;
+  /* The browser skips rows that are off screen and counts each as one line tall. Without wrapping a row is exactly one line, because a message never holds a line break, so the view does not jump when rows come into view. */
   content-visibility: auto;
-  contain-intrinsic-size: auto 20px;
+  contain-intrinsic-size: 1lh;
 }
 .row:hover { background: var(--hover); }
 
 .row .t { color: var(--time); font-variant-numeric: tabular-nums; }
 .row .inst { color: var(--inst); overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
 .row .plg { color: var(--plugin); overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
-.row .plg.core { color: var(--faint); cursor: default; }
-.row .inst:hover, .row .plg:not(.core):hover { text-decoration: underline; text-underline-offset: 3px; }
+.row .plg.core { color: var(--faint); }
+.row .inst:hover, .row .plg:hover { text-decoration: underline; text-underline-offset: 3px; }
 .row .msg { overflow: hidden; text-overflow: ellipsis; }
 
 .log-lines.wrap .row .msg { white-space: pre-wrap; overflow-wrap: anywhere; }
+/* A wrapped row can be any height, so no one-line stand-in fits. Every row is laid out, and the view stays put when older lines load. */
+.log-lines.wrap .row { content-visibility: visible; }
 
 .row.lvl-error { background: light-dark(rgb(173 67 55 / 0.05), rgb(208 103 90 / 0.06)); }
 .row.lvl-error:hover { background: light-dark(rgb(173 67 55 / 0.09), rgb(208 103 90 / 0.1)); }

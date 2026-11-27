@@ -10,7 +10,9 @@ updates:
       interval: "weekly"
     open-pull-requests-limit: 5
     commit-message:
-      prefix: "chore"
+      # A runtime dependency ships to people who run Keystone, so its update
+      # is a fix and makes a release. Development tools only change the build.
+      prefix: "fix"
       prefix-development: "chore"
     ignore:
       # @types/node must match the oldest supported Node (package.json engines),
