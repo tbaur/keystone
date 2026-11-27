@@ -259,6 +259,20 @@ describe('LogView order and size', () => {
     assert.equal(view.latestId, 11)
   })
 
+  it('shows the lines it held once a load fails and it resumes, skipping those it has', () => {
+    const { browser, view } = setup(page(lines(1, 3)))
+    view.pause()
+    view.receive(lines(3, 5))
+    browser.settle()
+    assert.deepEqual(rowIds(browser), [1, 2, 3], 'held while the page loads')
+    view.resume()
+    browser.settle()
+    assert.deepEqual(rowIds(browser), [1, 2, 3, 4, 5])
+    view.receive([line(6)])
+    browser.settle()
+    assert.equal(rowIds(browser).at(-1), 6, 'no longer held')
+  })
+
   it('starts over when more lines arrived during a reload than it holds, leaving a gap', () => {
     const { browser, view } = setup(page(lines(1, 3)))
     view.pause()
@@ -427,6 +441,12 @@ describe('LogView lines and filters', () => {
     const row = browser.list.findAll('row')[0]!
     assert.deepEqual(row.findAll('msg').flatMap((msg) => msg.children.map((mark) => mark.textContent)), ['door'])
     assert.equal(row.findAll('msg')[0]?.textContent, 'İstanbul door')
+  })
+
+  it('marks a word that ends in a capital sigma, as the filter matches it', () => {
+    const { browser } = setup(page([line(1, { message: 'ΟΔΟΣ κλειστή' })]), { filters: { ...NO_FILTERS, search: 'οδος' } })
+    const row = browser.list.findAll('row')[0]!
+    assert.deepEqual(row.findAll('msg').flatMap((msg) => msg.children.map((mark) => mark.textContent)), ['ΟΔΟΣ'])
   })
 
   it('narrows to Homebridge itself on a click on a core line\'s label', () => {

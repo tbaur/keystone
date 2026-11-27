@@ -37,9 +37,21 @@ export function readFilters(search: string): Filters {
   return {
     instances: (params.get('instance') ?? '').split(',').filter(Boolean),
     level: level === 'warn' || level === 'error' ? level : '',
-    plugin: (params.get('plugin') ?? '').trim().slice(0, MAX_PLUGIN),
-    search: (params.get('q') ?? '').trim().slice(0, MAX_SEARCH),
+    plugin: cutTo((params.get('plugin') ?? '').trim(), MAX_PLUGIN),
+    search: cutTo((params.get('q') ?? '').trim(), MAX_SEARCH),
   }
+}
+
+/** `text` cut to `max` UTF-16 units, without leaving half of a character such as an emoji at the end. */
+export function cutTo(text: string, max: number): string {
+  const cut = text.slice(0, max)
+  return /[\ud800-\udbff]$/.test(cut) ? cut.slice(0, -1) : cut
+}
+
+/** The plugin menu: every plugin, then Homebridge itself and all plugins at the top, as value and label. */
+export function pluginMenu(names: Iterable<string>): Array<[value: string, label: string]> {
+  const plugins = [...new Set(names)].filter((name) => name && name !== CORE_PLUGIN).sort((a, b) => a.localeCompare(b))
+  return [['', 'All plugins'], [CORE_PLUGIN, 'Homebridge itself'], ...plugins.map((name): [string, string] => [name, name])]
 }
 
 /** The filters without instances that no longer exist, such as one renamed since a bookmark was made. */

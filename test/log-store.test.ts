@@ -108,6 +108,13 @@ describe('LogStore', () => {
     assert.equal(page.hasMore, true)
   })
 
+  it('keeps the newest line when every line is past retention, so ids keep counting up', () => {
+    store.append([line({ receivedAt: 1 }), line({ receivedAt: 2 })])
+    assert.equal(store.pruneBatch(1000, 0, 10), 1)
+    const [next] = store.append([line({ receivedAt: 2000 })])
+    assert.equal(next?.id, 3, 'not 1 again')
+  })
+
   it('reads no more than its budget of lines for a search the index cannot answer, and says where to go on', () => {
     const small = new LogStore(openDatabase(':memory:'), { scanBudget: 4 })
     small.append(Array.from({ length: 10 }, (_, i) => line({ ts: 1000 + i, raw: i === 1 ? 'zz match' : `line ${i}` })))

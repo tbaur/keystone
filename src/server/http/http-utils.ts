@@ -60,13 +60,16 @@ export function requestUrl(req: IncomingMessage): URL {
   }
 }
 
-/** The host name in a Host header, lowercased and without the port; an IPv6 address keeps its brackets. Null when there is none. */
+/**
+ * The host name in a Host header, lowercased, without the port or a trailing
+ * dot, and with an IPv6 address shortened and in brackets. Null when there is none.
+ */
 export function hostName(header: string | undefined): string | null {
   if (!header) {
     return null
   }
   try {
-    return new URL(`http://${header}`).hostname.toLowerCase() || null
+    return new URL(`http://${header}`).hostname.toLowerCase().replace(/\.$/, '') || null
   } catch (error) {
     if (errorCode(error) === 'ERR_INVALID_URL') {
       return null

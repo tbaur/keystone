@@ -5,10 +5,10 @@
  * See LICENSE file for full license text
  */
 
-import type { LogLine, Overview } from '../shared/types.ts'
+import type { LogLine, LogPage, Overview } from '../shared/types.ts'
 import { ApiError, LiveStream, fetchLogs, fetchOverview, messageOf, signOut, type StreamStatus } from './api.ts'
 import { byId, h } from './dom.ts'
-import { CORE_PLUGIN, isFiltered, isLevelFilter, NO_FILTERS, readFilters, toParams, withKnownInstances, type Filters } from './filters.ts'
+import { isFiltered, isLevelFilter, NO_FILTERS, pluginMenu, readFilters, toParams, withKnownInstances, type Filters } from './filters.ts'
 import { LogView } from './log-view.ts'
 import { renderHost, renderInstances } from './overview-view.ts'
 
@@ -48,8 +48,10 @@ let hiddenErrors = 0
 let hostInstance = ''
 let latest: Overview | null = null
 let stream: LiveStream | null = null
+type BannerTopic = 'start' | 'log' | 'filters' | 'store' | 'stream'
+
 /** What the banner says, by what it is about, so one problem clearing does not hide another. */
-const banners = new Map<'start' | 'log' | 'store' | 'stream', string>()
+const banners = new Map<BannerTopic, string>()
 
 const colourOf = (instance: string): number => Math.max(0, instanceNames.indexOf(instance)) % COLOURS
 
@@ -73,13 +75,16 @@ let reloads = 0
  * overlapping reloads is shown. Filters the server refuses are dropped; any
  * other failure is tried again, with a growing wait, until a page loads.
  */
-async function reload(): Promise<void> {
+async function reload(first?: Promise<LogPage>): Promise<void> {
   const reloadNumber = ++reloads
-  view.pause()
+  let pending = first
+  let isShowingWanted = false
   for (let attempt = 0; reloadNumber === reloads; attempt++) {
     const wanted = filters
+    // Live lines wait from here until the page is in, so none falls between the two.
+    view.pause()
     try {
-      const page = await fetchLogs(wanted)
+      const page = await (pending ?? fetchLogs(wanted))
       if (reloadNumber === reloads) {
         view.reset(page, wanted)
         setBanner('log', null)
@@ -88,15 +93,24 @@ async function reload(): Promise<void> {
       }
       return
     } catch (error) {
+      pending = undefined
       if (reloadNumber !== reloads) {
         return
       }
       if (error instanceof ApiError && error.status === 400 && isFiltered(wanted)) {
-        setBanner('log', `Could not use these filters (${error.message}), so every line is shown.`)
+        setBanner('filters', `Could not use these filters (${error.message}), so every line is shown.`)
         useFilters(NO_FILTERS)
+        isShowingWanted = false
         continue
       }
       setBanner('log', `Could not load the log: ${messageOf(error)}. Trying again…`)
+      if (isShowingWanted) {
+        view.resume()
+      } else {
+        // Until a page loads, show the new filters' live lines on an empty list, not the old filters' rows.
+        view.reset({ lines: [], hasMore: false, latestId: view.latestId }, wanted)
+        isShowingWanted = true
+      }
       await wait(retryDelay(attempt))
     }
   }
@@ -111,6 +125,7 @@ function wait(ms: number): Promise<void> {
 }
 
 function applyFilters(next: Filters): void {
+  setBanner('filters', null)
   useFilters(next)
   void reload()
 }
@@ -154,14 +169,10 @@ function renderInstanceChips(): void {
 
 /** The plugin menu lists every plugin seen in the log or in the error counts. */
 function refreshPluginOptions(): void {
-  const names = [...new Set([...knownPlugins, ...view.plugins, filters.plugin].filter((name) => name && name !== CORE_PLUGIN))]
-    .sort((a, b) => a.localeCompare(b))
-  const current = [...el.pluginFilter.options].map((option) => option.value).slice(2)
-  if (names.join('\n') !== current.join('\n')) {
-    el.pluginFilter.replaceChildren(
-      h('option', { value: '' }, 'All plugins'),
-      h('option', { value: CORE_PLUGIN }, 'Homebridge itself'),
-      ...names.map((name) => h('option', { value: name }, name)))
+  const menu = pluginMenu([...knownPlugins, ...view.plugins, filters.plugin])
+  const current = [...el.pluginFilter.options].map((option) => option.value)
+  if (menu.map(([value]) => value).join('\n') !== current.join('\n')) {
+    el.pluginFilter.replaceChildren(...menu.map(([value, label]) => h('option', { value }, label)))
   }
   el.pluginFilter.value = filters.plugin
 }
@@ -210,7 +221,7 @@ function setLive(status: StreamStatus): void {
   el.liveText.textContent = status === 'live' ? 'Live' : 'Reconnecting…'
 }
 
-function setBanner(topic: 'start' | 'log' | 'store' | 'stream', message: string | null): void {
+function setBanner(topic: BannerTopic, message: string | null): void {
   if (message === null) {
     banners.delete(topic)
   } else {
@@ -308,6 +319,11 @@ function keepSessionAlive(delay = SESSION_REFRESH_MS): void {
 async function start(): Promise<void> {
   bindControls()
   setWrap(window.localStorage.getItem(WRAP_KEY) === '1')
+  // Ask for the first page while the overview loads. Its result is used only if the filters stay as they are.
+  const asked = filters
+  const firstPage = fetchLogs(asked)
+  // A failure is handled where the page is used, by reload(); this only keeps an unused page from being reported as unhandled.
+  firstPage.catch(() => undefined)
   const overview = await firstOverview()
   instanceNames = overview.instances.map((instance) => instance.name)
   renderInstanceChips()
@@ -317,7 +333,7 @@ async function start(): Promise<void> {
   useFilters(withKnownInstances(filters, instanceNames))
   window.setInterval(renderCards, AGE_REFRESH_MS)
   keepSessionAlive()
-  await reload()
+  await reload(filters === asked ? firstPage : undefined)
 }
 
 start().catch((error: unknown) => setBanner('start', `Could not start Keystone: ${messageOf(error)}. Reload the page.`))

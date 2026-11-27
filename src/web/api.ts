@@ -80,6 +80,8 @@ export interface StreamHandlers {
 }
 
 const RESTART_MS = 5000
+/** A page reloads at most this often for events it cannot read, so a server that keeps sending them does not reload it over and over. */
+const BAD_EVENT_RELOAD_MS = 60_000
 
 /**
  * The live stream. EventSource reconnects by itself and sends Last-Event-ID,
@@ -91,6 +93,7 @@ export class LiveStream {
   private lastId: number
   private readonly handlers: StreamHandlers
   private restartTimer = 0
+  private badReloadAt = -Infinity
 
   constructor(afterId: number, handlers: StreamHandlers) {
     this.lastId = afterId
@@ -113,8 +116,9 @@ export class LiveStream {
       if (lines) {
         this.lastId = lines.at(-1)?.id ?? this.lastId
         this.handlers.onLines(lines)
-      } else {
+      } else if (Date.now() - this.badReloadAt >= BAD_EVENT_RELOAD_MS) {
         // Lines that cannot be read leave a gap, so the page starts over from a fresh page.
+        this.badReloadAt = Date.now()
         this.handlers.onReset()
       }
     })

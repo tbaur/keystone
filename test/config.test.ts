@@ -121,8 +121,8 @@ describe('parseSettings', () => {
 
   it('reads allowedHosts as lowercase names and addresses, and refuses anything with a scheme or port', () => {
     assert.deepEqual(parseSettings(validSettings(), context).allowedHosts, [])
-    const hosts = parseSettings({ ...validSettings(), allowedHosts: ['Keystone.Example.com', '192.0.2.10', '[2001:db8::1]'] }, context).allowedHosts
-    assert.deepEqual(hosts, ['keystone.example.com', '192.0.2.10', '[2001:db8::1]'])
+    const hosts = parseSettings({ ...validSettings(), allowedHosts: ['Keystone.Example.com.', '192.0.2.10', '[2001:0db8:0::1]'] }, context).allowedHosts
+    assert.deepEqual(hosts, ['keystone.example.com', '192.0.2.10', '[2001:db8::1]'], 'in the form that a Host header is compared in')
     assert.throws(() => parseSettings({ ...validSettings(), allowedHosts: ['https://keystone.example.com', 'host.test:8590'] }, context), (error: unknown) => {
       assert.ok(error instanceof ConfigError)
       assert.equal(error.problems.length, 2)

@@ -182,6 +182,7 @@ The server writes one JSON object per line to stdout, with `time`, `level` and `
 | `apiUrl uses plain http to another host` | The Homebridge password crosses the network unencrypted. Use HTTPS for that `apiUrl`. |
 | `request failed` | An unexpected server error. The browser showed the same `requestId`. A client that disconnects partway through a request is logged as `request ended by the client` at debug level instead. |
 | `maintenance failed` | The hourly clean-up of old lines and sessions failed. It runs again in an hour. |
+| `old log lines removed` | The hourly clean-up removed lines past `retentionDays` or past the line ceiling. The newest line always stays, so line ids keep counting up. |
 | `uncaught exception`, `unhandled rejection` | A bug. The process exits with code 1 so that the service manager restarts it. |
 | `stopping`, `stopping now, without waiting`, `shutdown failed` | A signal asked the server to stop. A second signal stops it at once, and a failed shutdown exits with code 1. |
 

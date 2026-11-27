@@ -154,6 +154,20 @@ export class LogView {
     this.isWaiting = true
   }
 
+  /** Stop holding live lines without a new page, as after a load that failed, and show the ones held. */
+  resume(): void {
+    if (!this.isWaiting) {
+      return
+    }
+    const waiting = this.waiting.filter((line) => line.id > this.newestId)
+    // Live lines carry every id in turn, so a first held line that does not follow the newest one means lines were dropped.
+    this.hasGap ||= this.hasDroppedWaiting && (waiting[0]?.id ?? this.newestId + 1) > this.newestId + 1
+    this.waiting = []
+    this.hasDroppedWaiting = false
+    this.isWaiting = false
+    this.receive(waiting)
+  }
+
   /** New lines from the stream. Lines that do not match the filters are skipped. */
   receive(lines: readonly LogLine[]): void {
     if (this.isWaiting) {
@@ -631,9 +645,10 @@ function fixDivider(row: HTMLElement): void {
 }
 
 /**
- * Wrap each case-insensitive match of `query` in <mark>. Lowercasing can change
- * the length of the text (`İ` becomes two characters), so each position in the
- * lowercased text is mapped back to the character it came from.
+ * Wrap each case-insensitive match of `query` in <mark>. The text is lowercased
+ * whole, as `matches()` does, so a word-final `Σ` becomes `ς`. Lowercasing can
+ * change the length of the text (`İ` becomes two characters), so each position
+ * in the lowercased text is mapped back to the character it came from.
  */
 function appendHighlighted(parent: HTMLElement, text: string, query: string): void {
   const needle = query.trim().toLowerCase()
@@ -641,19 +656,22 @@ function appendHighlighted(parent: HTMLElement, text: string, query: string): vo
     parent.append(text)
     return
   }
-  let lower = ''
-  /** For each code unit of `lower`, where its character starts in `text`. One more entry marks the end. */
+  /** For each code unit of the lowercased text, where its character starts in `text`. One more entry marks the end. */
   const origin: number[] = []
+  let perCharacter = ''
   let at = 0
   for (const char of text) {
     const folded = char.toLowerCase()
     for (let unit = 0; unit < folded.length; unit++) {
       origin.push(at)
     }
-    lower += folded
+    perCharacter += folded
     at += char.length
   }
   origin.push(text.length)
+  // Lowercasing the whole text only changes letters by context, never lengths; keep the per-character form if it ever does.
+  const whole = text.toLowerCase()
+  const lower = whole.length === perCharacter.length ? whole : perCharacter
   let cursor = 0
   for (let index = lower.indexOf(needle); index >= 0; index = lower.indexOf(needle, index + needle.length)) {
     const start = origin[index] ?? text.length

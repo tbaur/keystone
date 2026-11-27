@@ -95,11 +95,13 @@ describe('Maintenance', () => {
   it('runs as the server starts', async (t) => {
     const dir = tempDir(t)
     const store = new LogStore(openDatabase(dir))
-    store.append([{ instance: 'example-1', ts: 1, receivedAt: 1, plugin: null, level: 'info', system: false, raw: 'old', messageOffset: 0 }])
+    const old = { instance: 'example-1', ts: 1, receivedAt: 1, plugin: null, level: 'info' as const, system: false, raw: 'old', messageOffset: 0 }
+    store.append([old, old])
     const logger = memoryLogger()
     const running = await startDashboard(config(dir), logger, { webRoot: fakeWebRoot(dir) })
     t.after(() => running.close())
-    await waitFor(() => logger.records.find((record) => record.msg === 'old log lines removed'))
+    const removed = await waitFor(() => logger.records.find((record) => record.msg === 'old log lines removed'))
+    assert.equal(removed.removed, 1, 'the newest line stays, so ids keep counting up')
   })
 })
 

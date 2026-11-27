@@ -185,11 +185,15 @@ export class LogStore {
   /**
    * Delete up to `batch` lines that arrived before the cutoff, then, with what
    * is left of the batch, the oldest lines up to `capId`. Returns how many
-   * went; fewer than `batch` means there is nothing more to delete.
+   * went; fewer than `batch` means there is nothing more to delete. The newest
+   * line always stays: SQLite numbers a new row one past the highest id left,
+   * so an empty table would start again at 1, and browsers and reconnecting
+   * streams, which go by the newest id they have, would miss the new lines.
    */
   pruneBatch(cutoff: number, capId: number, batch: number): number {
-    let removed = Number(this.statement('DELETE FROM logs WHERE id IN (SELECT id FROM logs WHERE received_at < ? LIMIT ?)')
-      .run(cutoff, batch).changes)
+    let removed = Number(this.statement(
+      'DELETE FROM logs WHERE id IN (SELECT id FROM logs WHERE received_at < ? AND id < (SELECT MAX(id) FROM logs) LIMIT ?)',
+    ).run(cutoff, batch).changes)
     if (removed < batch && capId > 0) {
       removed += Number(this.statement('DELETE FROM logs WHERE id IN (SELECT id FROM logs WHERE id <= ? ORDER BY id LIMIT ?)')
         .run(capId, batch - removed).changes)

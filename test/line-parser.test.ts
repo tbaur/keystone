@@ -193,6 +193,24 @@ describe('readStamp', () => {
     assert.equal(at('2026-10-21 20:05:09.123', newYork), Date.UTC(2026, 9, 22, 0, 5, 9, 123))
   })
 
+  it('reads the stamps of toUTCString(), toString() and a trailing zone or offset', () => {
+    const denver = { reference: Date.UTC(2026, 9, 21, 18, 6), timeZone: 'America/Denver' }
+    const instant = Date.UTC(2026, 9, 21, 18, 5, 9)
+    assert.equal(at('Wed, 21 Oct 2026 18:05:09 GMT', denver), instant)
+    assert.equal(at('Wed Oct 21 2026 20:05:09 GMT+0200 (Central European Summer Time)', denver), instant)
+    assert.equal(at('2026-10-21 12:05:09 -0600', denver), instant)
+    assert.equal(at('2026-10-21 18:05:09 UTC', denver), instant)
+    assert.equal(at('10/21/2026, 6:05:09 PM GMT', denver), instant)
+  })
+
+  it('does not take a zone name for a word for half of the day', () => {
+    const denver = { reference: Date.UTC(2026, 9, 21, 14, 6), timeZone: 'America/Denver' }
+    // MDT holds sq's pm word `md`, and EAT holds to's `ea`; a zone name is read in the host's zone.
+    assert.equal(at('2026-10-21 08:05:09 MDT', denver), Date.UTC(2026, 9, 21, 14, 5, 9))
+    assert.equal(at('2026-10-21 08:05:09 EAT', denver), Date.UTC(2026, 9, 21, 14, 5, 9))
+    assert.equal(at('10/21/2026, 8:05:09 a.m. MDT', denver), Date.UTC(2026, 9, 21, 14, 5, 9))
+  })
+
   it('reads the hour that happens twice when clocks go back as the one nearer the arrival', () => {
     const first = { reference: Date.UTC(2026, 10, 1, 5, 30), timeZone: 'America/New_York' }
     const second = { reference: Date.UTC(2026, 10, 1, 6, 30), timeZone: 'America/New_York' }

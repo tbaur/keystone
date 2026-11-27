@@ -136,6 +136,7 @@ describe('dashboard HTTP', () => {
     assert.equal(await requestWithHost(port(strict.base), '/healthz', 'rebound.example.net'), 421)
     assert.equal(await requestWithHost(port(strict.base), '/api/login', 'rebound.example.net:8590'), 421)
     assert.notEqual(await requestWithHost(port(strict.base), '/healthz', 'Keystone.Example.com'), 421)
+    assert.notEqual(await requestWithHost(port(strict.base), '/healthz', 'keystone.example.com.:443'), 421, 'a trailing dot is the same name')
     assert.notEqual(await requestWithHost(port(strict.base), '/healthz', `127.0.0.1:${port(strict.base)}`), 421)
     assert.notEqual(await requestWithHost(port(strict.base), '/healthz', 'localhost'), 421)
   })

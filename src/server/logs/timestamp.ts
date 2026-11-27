@@ -13,7 +13,8 @@
  * and second, and sometimes a word for the half of the day or other short
  * words around them. Some locales write other digits, such as Arabic-Indic,
  * and some count years in the Buddhist (th) or Persian (fa, ps) calendar.
- * Plugins that write their own lines may use ISO 8601 instead.
+ * Plugins that write their own lines may use ISO 8601 instead, or JavaScript's
+ * `toUTCString()` and `toString()`, sometimes with a zone or an offset.
  */
 
 /** The order of year, month and day in a date. */
@@ -37,8 +38,17 @@ export interface Stamp {
   order: DateOrder | null
 }
 
-const BRACKETED = /^\[([^\]]{6,64})\] /
+const BRACKETED = /^\[([^\]]{6,80})\] /
 const ISO = /^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2}):(\d{2})(?:[.,](\d{1,9}))?(Z|[+-]\d{2}(?::?\d{2})?)?$/
+/** The zone name that `toString()` adds in brackets, such as `(Central European Summer Time)`. It has no digits, unlike eu's `(20:05:09)`. */
+const ZONE_NAME = /\s+\([^)\d]+\)$/u
+/** A zone at the end: `GMT`, `UTC` or `Z`, maybe with an offset, or an offset alone such as `+0200` or `-06:00`. */
+const ZONE = /\s+(?:(?:GMT|UTC|Z)(?:([+-])(\d{1,2})(?::?(\d{2}))?)?|([+-])(\d{2}):?(\d{2}))$/
+/** `Wed, 21 Oct 2026 18:05:09` from `toUTCString()`, the zone already taken off. */
+const DAY_MONTH_YEAR = /^(?:[A-Z][a-z]{2},? )?(\d{1,2}) ([A-Z][a-z]{2}) (\d{4}) (\d{2}):(\d{2}):(\d{2})$/
+/** `Wed Oct 21 2026 20:05:09` from `toString()`, the zone already taken off. */
+const MONTH_DAY_YEAR = /^(?:[A-Z][a-z]{2} )?([A-Z][a-z]{2}) (\d{1,2}) (\d{4}) (\d{2}):(\d{2}):(\d{2})$/
+const MONTHS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec']
 const NUMBER = /\d+/g
 /** Between the parts of a date: `.`, `/`, `-`, a space, CJK date characters, or two punctuation marks at most. */
 const DATE_SEPARATOR = /^(?:[\p{P}\p{S}]{0,2}|[年月])$/u
@@ -55,17 +65,21 @@ const OTHER_CALENDARS = ['buddhist', 'persian'] as const
 
 /**
  * The words for the second half of the day, and the first, in every locale
- * that Node's ICU writes with a 12-hour clock, without dots and spaces and
- * lowercased. Longer words are checked first, so `anw` wins over `an`.
+ * that Node's ICU writes with a 12-hour clock, in the form that `wordForm`
+ * gives: lowercased and without dots, so `p.m.` is `pm`. A word only counts
+ * on its own, not inside another word, so the zone `MDT` is not `md` (pm in
+ * sq). Longer words are checked first, so `anw` wins over `an`.
  */
 const PM_WORDS = byLength([
   'pm', 'anw', 'ከሰዓት', 'م', 'অপৰাহ্ন', 'ཕྱི་ཆ་', 'ɣetrɔ', 'μμ', '오후', 'ptg', 'wb', 'شام', 'gd', 'md', 'ድቀ', 'ea', 'बेलासे', 'ᏒᎯᏱᎢ',
-  'دن', '܏ܒܛ', 'ᐲᒼ', 'स’ञ', 'ntmeddit', 'सांझ', 'ǃuias', 'tŋ', 'दपेहरा/संजा', '下晝', 'ཕྱི་དྲོ་', 'अपराह्न', 'غو', '下午', '午後',
+  'دن', '܏ܒܛ', 'ᐲᒼ', 'स’ञ', 'n tmeddit', 'सांझ', 'ǃuias', 'tŋ', 'दपेहरा/संजा', '下晝', 'ཕྱི་དྲོ་', 'अपराह्न', 'غو', '下午', '午後',
 ])
 const AM_WORDS = byLength([
   'am', 'an', 'ጥዋት', 'ص', 'পূৰ্বাহ্ন', 'སྔ་ཆ་', 'ŋdi', 'πμ', '오전', 'pg', 'wd', 'صبح', 'gh', 'pd', 'ቅቀ', 'hh', 'फुं', 'ᏌᎾᎴ',
-  'بن', '܏ܩܛ', 'ᐊᒼ', 'सवेर', 'ntufat', 'भोर', 'নুমাং', 'ǁgoagas', 'rw', 'भ्यागा', '上晝', 'སྔ་དྲོ་', 'पूर्वाह्न', 'غم', '上午', '午前',
+  'بن', '܏ܩܛ', 'ᐊᒼ', 'सवेर', 'n tufat', 'भोर', 'নুমাং', 'ǁgoagas', 'rw', 'भ्यागा', '上晝', 'སྔ་དྲོ་', 'पूर्वाह्न', 'غم', '上午', '午前',
 ])
+/** A letter or a mark that belongs to one, which may not touch a day-period word. */
+const LETTER = /[\p{L}\p{M}]/u
 
 interface Fields {
   year: number
@@ -88,8 +102,53 @@ export function readStamp(plain: string, context: StampContext): Stamp | null {
   if (iso !== undefined) {
     return { length: bracketed[0].length, ts: iso, order: null }
   }
-  const local = readLocale(text, context)
+  const { rest, offset } = splitZone(text.replace(ZONE_NAME, ''))
+  const english = readEnglish(rest, context, offset)
+  if (english !== undefined) {
+    return { length: bracketed[0].length, ts: english, order: null }
+  }
+  const local = readLocale(rest, context, offset)
   return local === undefined ? null : { length: bracketed[0].length, ...local }
+}
+
+/** The text without a zone at its end, and that zone's offset in ms ahead of UTC, or null when it names none. */
+function splitZone(text: string): { rest: string, offset: number | null } {
+  const match = ZONE.exec(text)
+  if (!match) {
+    return { rest: text, offset: null }
+  }
+  const [, sign, hours, minutes, bareSign, bareHours, bareMinutes] = match
+  const direction = (sign ?? bareSign) === '-' ? -1 : 1
+  const offset = direction * (Number(hours ?? bareHours ?? '0') * 60 + Number(minutes ?? bareMinutes ?? '0')) * 60_000
+  return { rest: text.slice(0, match.index), offset }
+}
+
+/** A `toUTCString()` or `toString()` time with an English month name. Undefined when the text is not one. */
+function readEnglish(text: string, context: StampContext, offset: number | null): number | null | undefined {
+  const dayFirst = DAY_MONTH_YEAR.exec(text)
+  const monthFirst = dayFirst ? null : MONTH_DAY_YEAR.exec(text)
+  const match = dayFirst ?? monthFirst
+  if (!match) {
+    return undefined
+  }
+  const [, first = '', second = '', year = '', hour = '', minute = '', secondText = ''] = match
+  const [dayText, monthName] = dayFirst ? [first, second] : [second, first]
+  const month = MONTHS.indexOf(monthName.toLowerCase()) + 1
+  const fields: Fields = { year: Number(year), month, day: Number(dayText), hour: Number(hour), minute: Number(minute), second: Number(secondText) }
+  if (month === 0 || fields.hour > 23 || fields.minute > 59 || fields.second > 59) {
+    return undefined
+  }
+  const ts = atOffset(fields, context, offset)
+  return ts ?? undefined
+}
+
+/** Epoch ms of a wall time at a known offset, or in the host's zone when the offset is null. Null when the date does not exist. */
+function atOffset(fields: Fields, context: StampContext, offset: number | null): number | null {
+  if (offset === null) {
+    return toEpoch(fields, context)
+  }
+  const wall = utcWall(fields)
+  return wall === null ? null : wall - offset
 }
 
 /** An ISO 8601 time, read in the host's zone when it has no offset. Undefined when the text is not one. */
@@ -119,7 +178,7 @@ function readIso(text: string, context: StampContext): number | null | undefined
  * with short words around them. Undefined when the text is not one, or the
  * date or time does not exist.
  */
-function readLocale(text: string, context: StampContext): { ts: number | null, order: DateOrder | null } | undefined {
+function readLocale(text: string, context: StampContext, offset: number | null): { ts: number | null, order: DateOrder | null } | undefined {
   const normal = normalize(text)
   const numbers = [...normal.matchAll(NUMBER)]
   if (numbers.length !== 6) {
@@ -149,7 +208,7 @@ function readLocale(text: string, context: StampContext): { ts: number | null, o
     for (const { order, ...day } of dateReadings(date)) {
       const placed = placeDate(day, context)
       if (placed !== undefined) {
-        readings.push({ order, ts: placed === null ? null : toEpoch({ ...placed, ...clock }, context) })
+        readings.push({ order, ts: placed === null ? null : atOffset({ ...placed, ...clock }, context, offset) })
       }
     }
   }
@@ -186,10 +245,10 @@ function pickReading(readings: ReadonlyArray<{ order: DateOrder, ts: number | nu
   return best
 }
 
-/** ASCII digits for the digits of any script, spaces for the narrow and no-break spaces, and no direction marks. */
+/** ASCII digits for the digits of any other script, spaces for the narrow and no-break spaces, and no direction marks. */
 function normalize(text: string): string {
   return text
-    .replace(/\p{Nd}/gu, (digit) => String(digitValue(digit)))
+    .replace(/[^\P{Nd}0-9]/gu, (digit) => String(digitValue(digit)))
     .replace(/[\u00a0\u202f]/g, ' ')
     .replace(/\p{Cf}/gu, '')
 }
@@ -211,13 +270,25 @@ function end(match: RegExpExecArray | RegExpMatchArray | undefined): number {
 
 /** 'pm', 'am', or null when the words name no half of the day. The longest word found wins, so `غ.م` (am) beats the `م` (pm) inside it. */
 function dayPeriod(words: string): 'pm' | 'am' | null {
-  const plain = plainWord(words)
-  const pm = PM_WORDS.find((word) => plain.includes(word))
-  const am = AM_WORDS.find((word) => plain.includes(word))
+  const text = wordForm(words)
+  const pm = PM_WORDS.find((word) => standsAlone(text, word))
+  const am = AM_WORDS.find((word) => standsAlone(text, word))
   if (pm === undefined || am === undefined) {
     return pm !== undefined ? 'pm' : am !== undefined ? 'am' : null
   }
   return am.length > pm.length ? 'am' : 'pm'
+}
+
+/** True when `word` appears in `text` with no letter right before or after it. */
+function standsAlone(text: string, word: string): boolean {
+  for (let at = text.indexOf(word); at >= 0; at = text.indexOf(word, at + 1)) {
+    const before = text.slice(0, at).at(-1) ?? ''
+    const after = text.slice(at + word.length).at(0) ?? ''
+    if (!LETTER.test(before) && !LETTER.test(after)) {
+      return true
+    }
+  }
+  return false
 }
 
 function readClock(time: readonly string[], meridiem: 'pm' | 'am' | null): { hour: number, minute: number, second: number } | null {
@@ -387,13 +458,13 @@ function zoneOffset(epoch: number, timeZone: string): number {
   return asUtc - Math.floor(epoch / 1000) * 1000
 }
 
-/** Lowercase, without spaces, dots or invisible format characters, so `p.m.`, `P M` and `pm` compare equal. */
-function plainWord(text: string): string {
-  return text.toLowerCase().replace(/[\s.\p{Cf}]/gu, '')
+/** Lowercase, without dots or invisible format characters, and with one space between words, so `p.m.` and `pm` compare equal. */
+function wordForm(text: string): string {
+  return text.toLowerCase().replace(/[.\p{Cf}]/gu, '').replace(/\s+/g, ' ').trim()
 }
 
 function byLength(words: string[]): string[] {
-  return words.map(plainWord).sort((a, b) => b.length - a.length)
+  return words.map(wordForm).sort((a, b) => b.length - a.length)
 }
 
 /** The zone name when this runtime knows it, else null. */

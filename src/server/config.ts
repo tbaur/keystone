@@ -186,12 +186,13 @@ function parseAllowedHosts(value: unknown, problems: string[]): string[] {
   }
   const hosts: string[] = []
   for (const item of value) {
-    const host = typeof item === 'string' ? item.toLowerCase() : ''
+    const host = typeof item === 'string' ? item.toLowerCase().replace(/\.$/, '') : ''
     const isAddress = isIP(host) === 4 || (host.startsWith('[') && host.endsWith(']') && isIP(host.slice(1, -1)) === 6)
     if (!isAddress && !HOST_NAME.test(host)) {
       problems.push(`${example}; "${String(item)}" is not one (leave out the scheme and port)`)
     } else {
-      hosts.push(host)
+      // The form that a Host header takes after parsing, so `[2001:0db8::1]` matches `[2001:db8::1]`.
+      hosts.push(new URL(`http://${host}`).hostname)
     }
   }
   return hosts

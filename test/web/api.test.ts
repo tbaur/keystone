@@ -130,12 +130,13 @@ describe('LiveStream', () => {
     assert.deepEqual(calls, ['lines 7', 'reconnecting'])
   })
 
-  it('starts over after lines it cannot read, and reports an overview it cannot read', () => {
+  it('starts over after lines it cannot read, at most once a minute, and reports an overview it cannot read', () => {
     new LiveStream(5, handlers())
     const source = FakeEventSource.opened[0]!
     source.send('logs', '{not json')
+    source.send('logs', '[{"id": "x"}]')
     source.send('overview', JSON.stringify({ instances: 'none' }))
     source.send('overview', JSON.stringify(EMPTY))
-    assert.deepEqual(calls, ['bad SyntaxError', 'reset', 'bad ShapeError', 'overview'])
+    assert.deepEqual(calls, ['bad SyntaxError', 'reset', 'bad ShapeError', 'bad ShapeError', 'overview'])
   })
 })

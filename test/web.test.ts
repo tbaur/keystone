@@ -17,7 +17,7 @@ import { searchQuery, searchText } from '../src/server/store/search.ts'
 import type { LogLine } from '../src/shared/types.ts'
 import { parseAnsi, stripAnsi } from '../src/web/ansi.ts'
 import {
-  CORE_PLUGIN, MAX_PLUGIN, MAX_SEARCH, matches, NO_FILTERS, readFilters, toParams, withKnownInstances,
+  CORE_PLUGIN, cutTo, MAX_PLUGIN, MAX_SEARCH, matches, NO_FILTERS, pluginMenu, readFilters, toParams, withKnownInstances,
 } from '../src/web/filters.ts'
 import { formatDuration, formatMbps } from '../src/web/format.ts'
 import { formatPluginVersion, formatVersion, hasPluginUpdate, hasUpdate, pluginsOutsideBridges } from '../src/web/plugins.ts'
@@ -74,6 +74,16 @@ describe('filters', () => {
     assert.deepEqual(withKnownInstances(read, ['example-1', 'example-2']).instances, ['example-1'])
     const kept = { ...NO_FILTERS, instances: ['example-1'] }
     assert.equal(withKnownInstances(kept, ['example-1']), kept, 'unchanged filters stay the same object')
+  })
+
+  it('cut a value without leaving half of an emoji', () => {
+    assert.equal(cutTo(`${'a'.repeat(199)}😀`, 200), 'a'.repeat(199))
+    assert.equal(cutTo('short', 200), 'short')
+  })
+
+  it('always offer all plugins and Homebridge itself in the plugin menu, even before any plugin is known', () => {
+    assert.deepEqual(pluginMenu([]), [['', 'All plugins'], [CORE_PLUGIN, 'Homebridge itself']])
+    assert.deepEqual(pluginMenu(['Lights', '', 'Camera', 'Lights', CORE_PLUGIN]).map(([value]) => value), ['', CORE_PLUGIN, 'Camera', 'Lights'])
   })
 
   it('find lines from Homebridge itself, live and stored, and not the dashboard\'s own lines', () => {
